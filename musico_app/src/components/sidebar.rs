@@ -18,19 +18,19 @@ use crate::{
 // Each is a 20x20 single-path icon.
 
 fn icon_now_playing() -> svg::Handle {
-    svg::Handle::from_memory(include_bytes!("../../assets/icons/disc.svg").as_ref())
+    svg::Handle::from_memory(include_bytes!("../../assets/icons/disc.svg").as_slice())
 }
 fn icon_library() -> svg::Handle {
-    svg::Handle::from_memory(include_bytes!("../../assets/icons/library.svg").as_ref())
+    svg::Handle::from_memory(include_bytes!("../../assets/icons/library.svg").as_slice())
 }
 fn icon_queue() -> svg::Handle {
-    svg::Handle::from_memory(include_bytes!("../../assets/icons/queue.svg").as_ref())
+    svg::Handle::from_memory(include_bytes!("../../assets/icons/queue.svg").as_slice())
 }
 fn icon_settings() -> svg::Handle {
-    svg::Handle::from_memory(include_bytes!("../../assets/icons/settings.svg").as_ref())
+    svg::Handle::from_memory(include_bytes!("../../assets/icons/settings.svg").as_slice())
 }
 fn icon_musico() -> svg::Handle {
-    svg::Handle::from_memory(include_bytes!("../../assets/icons/musico_logo.svg").as_ref())
+    svg::Handle::from_memory(include_bytes!("../../assets/icons/musico_logo.svg").as_slice())
 }
 
 // ─── Nav item component ───────────────────────────────────────────────────────
@@ -64,22 +64,22 @@ fn nav_item<'a>(
     let icon_widget = svg(icon)
         .width(Length::Fixed(16.0))
         .height(Length::Fixed(16.0))
-        .style(move |_theme: &iced::Theme| svg::Appearance {
-            color: Some(if is_active { ACCENT_PURPLE } else { TEXT_SECONDARY }),
-        });
+        .style(iced::theme::Svg::Custom(Box::new(theme::SvgStyle(
+            if is_active { ACCENT_PURPLE } else { TEXT_SECONDARY }
+        ))));
 
     let label_widget = text(label)
         .size(SIZE_LABEL)
-        .color(if is_active { TEXT_PRIMARY } else { TEXT_SECONDARY });
+        .style(if is_active { TEXT_PRIMARY } else { TEXT_SECONDARY });
 
     let inner = row![icon_widget, label_widget]
         .spacing(10)
-        .align_y(Alignment::Center)
+        .align_items(Alignment::Center)
         .padding([9, 12, 9, 12])
         .width(Length::Fill);
 
     let btn = button(inner)
-        .on_press(Message::Navigate(target))
+        .on_press(Message::NavigateTo(target))
         .style(iced::theme::Button::Custom(Box::new(NavButton { is_active })))
         .width(Length::Fill);
 
@@ -88,17 +88,18 @@ fn nav_item<'a>(
         accent_bar,
         container(btn).padding([0, 4]).width(Length::Fill),
     ]
-    .align_y(Alignment::Center)
+    .align_items(Alignment::Center)
     .into()
 }
 
 // ─── Now-playing mini card (bottom of sidebar above settings) ─────────────────
 
 fn now_playing_mini<'a>(state: &'a AppState) -> Element<'a, Message> {
-    if let Some(song) = &state.playback.current_song {
+    if let Some(song) = &state.current_song {
         let art = match &song.cover_art {
             Some(bytes) => {
-                let handle = iced::widget::image::Handle::from_memory(bytes.clone());
+                let b: Vec<u8> = bytes.clone();
+                let handle = iced::widget::image::Handle::from_memory(b);
                 container(
                     iced::widget::image(handle)
                         .width(Length::Fixed(34.0))
@@ -117,9 +118,7 @@ fn now_playing_mini<'a>(state: &'a AppState) -> Element<'a, Message> {
                     svg(icon_now_playing())
                         .width(Length::Fixed(16.0))
                         .height(Length::Fixed(16.0))
-                        .style(|_theme: &iced::Theme| svg::Appearance {
-                            color: Some(ACCENT_PURPLE),
-                        }),
+                        .style(iced::theme::Svg::Custom(Box::new(theme::SvgStyle(ACCENT_PURPLE)))),
                 )
                 .width(Length::Fixed(34.0))
                 .height(Length::Fixed(34.0))
@@ -139,11 +138,11 @@ fn now_playing_mini<'a>(state: &'a AppState) -> Element<'a, Message> {
         let info = column![
             text(&song.title)
                 .size(SIZE_CAPTION)
-                .color(TEXT_PRIMARY)
+                .style(TEXT_PRIMARY)
                 .shaping(text::Shaping::Advanced),
             text(&song.artist)
                 .size(11.0)
-                .color(TEXT_SECONDARY)
+                .style(TEXT_SECONDARY)
                 .shaping(text::Shaping::Advanced),
         ]
         .spacing(1)
@@ -152,7 +151,7 @@ fn now_playing_mini<'a>(state: &'a AppState) -> Element<'a, Message> {
         container(
             row![art, info]
                 .spacing(10)
-                .align_y(Alignment::Center)
+                .align_items(Alignment::Center)
                 .padding([10, 12]),
         )
         .style(theme::elevated_card)
@@ -170,9 +169,7 @@ fn logo_section<'a>() -> Element<'a, Message> {
         svg(icon_musico())
             .width(Length::Fixed(18.0))
             .height(Length::Fixed(18.0))
-            .style(|_theme: &iced::Theme| svg::Appearance {
-                color: Some(ACCENT_PURPLE),
-            }),
+            .style(iced::theme::Svg::Custom(Box::new(theme::SvgStyle(ACCENT_PURPLE)))),
     )
     .width(Length::Fixed(32.0))
     .height(Length::Fixed(32.0))
@@ -192,14 +189,14 @@ fn logo_section<'a>() -> Element<'a, Message> {
             logo_icon,
             text("Musico")
                 .size(18.0)
-                .color(TEXT_PRIMARY)
+                .style(TEXT_PRIMARY)
                 .font(iced::Font {
                     weight: iced::font::Weight::Semibold,
                     ..iced::Font::DEFAULT
                 }),
         ]
         .spacing(10)
-        .align_y(Alignment::Center),
+        .align_items(Alignment::Center),
     )
     .padding([22, 20, 18, 20])
     .into()
@@ -208,7 +205,7 @@ fn logo_section<'a>() -> Element<'a, Message> {
 // ─── Public: build the full sidebar ──────────────────────────────────────────
 
 pub fn sidebar<'a>(state: &'a AppState) -> Element<'a, Message> {
-    let current = state.current_view;
+    let current = state.active_view;
 
     let nav_section = column![
         nav_item("Now Playing", icon_now_playing(), View::NowPlaying, current),

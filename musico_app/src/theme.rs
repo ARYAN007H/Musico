@@ -8,27 +8,27 @@ use iced::{
 
 // ─── Color Palette ──────────────────────────────────────────────────────────
 
-pub const BASE:      Color = Color { r: 0.051, g: 0.055, b: 0.078, a: 1.0 }; // #0d0e14
-pub const SURFACE:   Color = Color { r: 0.075, g: 0.078, b: 0.114, a: 1.0 }; // #13141d
-pub const ELEVATED:  Color = Color { r: 0.102, g: 0.106, b: 0.149, a: 1.0 }; // #1a1b26
-pub const HIGHLIGHT: Color = Color { r: 0.122, g: 0.129, b: 0.200, a: 1.0 }; // #1f2133
+pub const BASE:      Color = Color::from_rgb(0.024, 0.027, 0.051); // #06070d
+pub const SURFACE:   Color = Color::from_rgb(0.051, 0.055, 0.078); // #0d0e14
+pub const ELEVATED:  Color = Color::from_rgb(0.059, 0.063, 0.098); // #0f1019
+pub const HIGHLIGHT: Color = Color::from_rgb(0.102, 0.106, 0.180); // #1a1b2e
 
-pub const BORDER_SUBTLE: Color = Color { r: 0.165, g: 0.176, b: 0.243, a: 0.6 }; // #2a2d3e @60%
-pub const BORDER_ACCENT: Color = Color { r: 0.239, g: 0.255, b: 0.388, a: 1.0 }; // #3d4163
+pub const BORDER_SUBTLE: Color = Color::from_rgb(0.118, 0.125, 0.200); // #1e2033
+pub const BORDER_ACCENT: Color = Color::from_rgb(0.145, 0.149, 0.251); // #252640
 
-pub const TEXT_PRIMARY:   Color = Color { r: 0.886, g: 0.894, b: 0.941, a: 1.0 }; // #e2e4f0
-pub const TEXT_SECONDARY: Color = Color { r: 0.545, g: 0.561, b: 0.659, a: 1.0 }; // #8b8fa8
-pub const TEXT_MUTED:     Color = Color { r: 0.290, g: 0.302, b: 0.388, a: 1.0 }; // #4a4d63
+pub const TEXT_PRIMARY:   Color = Color::from_rgb(0.886, 0.894, 0.941); // #e2e4f0
+pub const TEXT_SECONDARY: Color = Color::from_rgb(0.545, 0.561, 0.659); // #8b8fa8
+pub const TEXT_MUTED:     Color = Color::from_rgb(0.290, 0.302, 0.388); // #4a4d63
 
-pub const ACCENT_PURPLE: Color = Color { r: 0.616, g: 0.549, b: 1.000, a: 1.0 }; // #9d8cff
-pub const ACCENT_ROSE:   Color = Color { r: 1.000, g: 0.561, b: 0.639, a: 1.0 }; // #ff8fa3
-pub const ACCENT_CYAN:   Color = Color { r: 0.490, g: 0.812, b: 1.000, a: 1.0 }; // #7dcfff
-pub const ACCENT_AMBER:  Color = Color { r: 1.000, g: 0.620, b: 0.392, a: 1.0 }; // #ff9e64
-pub const ACCENT_GREEN:  Color = Color { r: 0.616, g: 0.808, b: 0.416, a: 1.0 }; // #9ece6a
+pub const ACCENT_PURPLE: Color = Color::from_rgb(0.616, 0.549, 1.000); // #9d8cff
+pub const ACCENT_ROSE:   Color = Color::from_rgb(1.000, 0.561, 0.639); // #ff8fa3
+pub const ACCENT_CYAN:   Color = Color::from_rgb(0.490, 0.812, 1.000); // #7dcfff
+pub const ACCENT_AMBER:  Color = Color::from_rgb(1.000, 0.620, 0.392); // #ff9e64
+pub const ACCENT_GREEN:  Color = Color::from_rgb(0.431, 0.906, 0.718); // #6ee7b7
 
 // ─── Dimensions ─────────────────────────────────────────────────────────────
 
-pub const SIDEBAR_WIDTH:     f32 = 220.0;
+pub const SIDEBAR_WIDTH:     f32 = 208.0;
 pub const BOTTOM_BAR_HEIGHT: f32 = 78.0;
 pub const RADIUS_LG: f32 = 16.0;
 pub const RADIUS_MD: f32 = 10.0;
@@ -42,17 +42,62 @@ pub const SIZE_LABEL:     f32 = 13.0;
 pub const SIZE_CAPTION:   f32 = 12.0;
 pub const SIZE_MICRO:     f32 = 11.0;
 
+// Aliases for compatibility
+pub const TEXT_HERO: f32 = SIZE_HERO;
+pub const TEXT_TITLE: f32 = SIZE_TITLE;
+pub const TEXT_BODY: f32 = SIZE_BODY;
+pub const TEXT_CAPTION: f32 = SIZE_CAPTION;
+
+// Fonts
+pub const FONT_DISPLAY: iced::Font = iced::Font::with_name("SF Pro Display");
+pub const FONT_TEXT: iced::Font = iced::Font::with_name("SF Pro Text");
+pub const FONT_ROUNDED: iced::Font = iced::Font::with_name("SF Pro Rounded");
+
 // ─── Helper: semi-transparent color ─────────────────────────────────────────
 
 pub fn with_alpha(c: Color, a: f32) -> Color {
     Color { a, ..c }
 }
 
+pub const NOW_PLAYING_ART_MAX: f32 = 400.0;
+
+pub fn musico_theme() -> iced::Theme {
+    iced::Theme::Dark
+}
+
+pub struct Palette {
+    pub base: Color,
+    pub surface: Color,
+    pub elevated: Color,
+    pub highlight: Color,
+    pub accent: Color,
+    pub border_subtle: Color,
+    pub text_primary: Color,
+    pub text_secondary: Color,
+    pub text_muted: Color,
+}
+
+impl Palette {
+    pub fn default_palette() -> Self {
+        Self {
+            base: BASE,
+            surface: SURFACE,
+            elevated: ELEVATED,
+            highlight: HIGHLIGHT,
+            accent: ACCENT_PURPLE,
+            border_subtle: BORDER_SUBTLE,
+            text_primary: TEXT_PRIMARY,
+            text_secondary: TEXT_SECONDARY,
+            text_muted: TEXT_MUTED,
+        }
+    }
+}
+
 // ─── Container Styles ────────────────────────────────────────────────────────
 
 pub fn sidebar_container(_theme: &iced::Theme) -> container::Appearance {
     container::Appearance {
-        background: Some(Background::Color(SURFACE)),
+        background: Some(Background::Color(ELEVATED)),
         border: Border {
             color: BORDER_SUBTLE,
             width: 1.0,
@@ -118,6 +163,7 @@ pub fn album_art_container(_theme: &iced::Theme) -> container::Appearance {
             offset: iced::Vector { x: 0.0, y: 20.0 },
             blur_radius: 60.0,
         },
+        ..Default::default()
     }
 }
 
@@ -172,6 +218,16 @@ impl button::StyleSheet for NavButton {
 
     fn pressed(&self, _style: &Self::Style) -> button::Appearance {
         self.hovered(_style)
+    }
+}
+
+pub struct SvgStyle(pub Color);
+impl iced::widget::svg::StyleSheet for SvgStyle {
+    type Style = iced::Theme;
+    fn appearance(&self, _style: &Self::Style) -> iced::widget::svg::Appearance {
+        iced::widget::svg::Appearance {
+            color: Some(self.0),
+        }
     }
 }
 

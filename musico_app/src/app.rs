@@ -382,10 +382,28 @@ impl Application for Musico {
             Layout::Wide
         };
 
-        match layout {
+        let content = match layout {
             Layout::Compact => self.view_compact(),
             Layout::Standard => self.view_standard(),
             Layout::Wide => self.view_wide(),
+        };
+
+        container(content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(iced::theme::Container::Custom(Box::new(BaseContainerStyle)))
+            .into()
+    }
+}
+
+struct BaseContainerStyle;
+impl iced::widget::container::StyleSheet for BaseContainerStyle {
+    type Style = iced::Theme;
+    fn appearance(&self, _style: &Self::Style) -> iced::widget::container::Appearance {
+        iced::widget::container::Appearance {
+            background: Some(iced::Background::Color(crate::theme::BASE)),
+            text_color: Some(crate::theme::TEXT_PRIMARY),
+            ..Default::default()
         }
     }
 }
@@ -429,21 +447,21 @@ impl Musico {
     }
 
     fn view_compact(&self) -> Element<'_, Message> {
-        let sidebar = sidebar(&self.0, Message::NavigateTo, Message::ToggleSidebar);
+        let sidebar = sidebar(&self.0);
         let main = self.main_content();
         
         row![sidebar, main].into()
     }
 
     fn view_standard(&self) -> Element<'_, Message> {
-        let sidebar = sidebar(&self.0, Message::NavigateTo, Message::ToggleSidebar);
+        let sidebar = sidebar(&self.0);
         let main = self.main_content();
         
         row![sidebar, main].into()
     }
 
     fn view_wide(&self) -> Element<'_, Message> {
-        let sidebar = sidebar(&self.0, Message::NavigateTo, Message::ToggleSidebar);
+        let sidebar = sidebar(&self.0);
         
         // In wide mode, queue might be visible on the side
         let main = if self.0.active_view == View::Queue {

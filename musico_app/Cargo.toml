@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-iced = { version = "0.12", features = ["wgpu", "image", "canvas", "tokio"] }
+iced = { version = "0.12", features = ["wgpu", "image", "canvas", "tokio", "svg"] }
 musico_playback = { path = "../musico_playback" }
 musico_recommender = { path = "../musico_recommender" }
 walkdir = "2"

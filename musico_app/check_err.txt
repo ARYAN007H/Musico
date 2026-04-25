@@ -1,0 +1,265 @@
+    Checking musico_app v0.1.0 (/home/aryan/Documents/projects/Musico/musico_app)
+warning: unused import: `Color`
+ --> musico_app/src/components/sidebar.rs:5:36
+  |
+5 |     Alignment, Background, Border, Color, Element, Length,
+  |                                    ^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `iced::widget::container::Appearance`
+ --> musico_app/src/components/sidebar.rs:8:5
+  |
+8 | use iced::widget::container::Appearance;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0283]: type annotations needed
+  --> musico_app/src/components/sidebar.rs:21:76
+   |
+21 |     svg::Handle::from_memory(include_bytes!("../../assets/icons/disc.svg").as_ref())
+   |                                                                            ^^^^^^ cannot infer type for type parameter `T` declared on the trait `AsRef`
+   |
+   = note: multiple `impl`s satisfying `[u8; 12]: AsRef<_>` found in the following crates: `core`, `palette`:
+           - impl<C, N> AsRef<PreAlpha<C>> for [<C as Premultiply>::Scalar; N]
+             where <PreAlpha<C> as ArrayCast>::Array == [<C as Premultiply>::Scalar; N], the constant `N` has type `usize`, C: Premultiply, PreAlpha<C>: ArrayCast, PreAlpha<C>: ?Sized;
+           - impl<C, T, N> AsRef<Alpha<C, T>> for [T; N]
+             where <Alpha<C, T> as ArrayCast>::Array == [T; N], the constant `N` has type `usize`, Alpha<C, T>: ArrayCast, Alpha<C, T>: ?Sized;
+           - impl<O, T, N> AsRef<palette::cast::Packed<O, [T; N]>> for [T; N]
+             where the constant `N` has type `usize`;
+           - impl<T, N> AsRef<[T]> for [T; N]
+             where the constant `N` has type `usize`;
+
+error[E0283]: type annotations needed
+  --> musico_app/src/components/sidebar.rs:24:79
+   |
+24 |     svg::Handle::from_memory(include_bytes!("../../assets/icons/library.svg").as_ref())
+   |                                                                               ^^^^^^ cannot infer type for type parameter `T` declared on the trait `AsRef`
+   |
+   = note: multiple `impl`s satisfying `[u8; 12]: AsRef<_>` found in the following crates: `core`, `palette`:
+           - impl<C, N> AsRef<PreAlpha<C>> for [<C as Premultiply>::Scalar; N]
+             where <PreAlpha<C> as ArrayCast>::Array == [<C as Premultiply>::Scalar; N], the constant `N` has type `usize`, C: Premultiply, PreAlpha<C>: ArrayCast, PreAlpha<C>: ?Sized;
+           - impl<C, T, N> AsRef<Alpha<C, T>> for [T; N]
+             where <Alpha<C, T> as ArrayCast>::Array == [T; N], the constant `N` has type `usize`, Alpha<C, T>: ArrayCast, Alpha<C, T>: ?Sized;
+           - impl<O, T, N> AsRef<palette::cast::Packed<O, [T; N]>> for [T; N]
+             where the constant `N` has type `usize`;
+           - impl<T, N> AsRef<[T]> for [T; N]
+             where the constant `N` has type `usize`;
+
+error[E0283]: type annotations needed
+  --> musico_app/src/components/sidebar.rs:27:77
+   |
+27 |     svg::Handle::from_memory(include_bytes!("../../assets/icons/queue.svg").as_ref())
+   |                                                                             ^^^^^^ cannot infer type for type parameter `T` declared on the trait `AsRef`
+   |
+   = note: multiple `impl`s satisfying `[u8; 12]: AsRef<_>` found in the following crates: `core`, `palette`:
+           - impl<C, N> AsRef<PreAlpha<C>> for [<C as Premultiply>::Scalar; N]
+             where <PreAlpha<C> as ArrayCast>::Array == [<C as Premultiply>::Scalar; N], the constant `N` has type `usize`, C: Premultiply, PreAlpha<C>: ArrayCast, PreAlpha<C>: ?Sized;
+           - impl<C, T, N> AsRef<Alpha<C, T>> for [T; N]
+             where <Alpha<C, T> as ArrayCast>::Array == [T; N], the constant `N` has type `usize`, Alpha<C, T>: ArrayCast, Alpha<C, T>: ?Sized;
+           - impl<O, T, N> AsRef<palette::cast::Packed<O, [T; N]>> for [T; N]
+             where the constant `N` has type `usize`;
+           - impl<T, N> AsRef<[T]> for [T; N]
+             where the constant `N` has type `usize`;
+
+error[E0283]: type annotations needed
+  --> musico_app/src/components/sidebar.rs:30:80
+   |
+30 |     svg::Handle::from_memory(include_bytes!("../../assets/icons/settings.svg").as_ref())
+   |                                                                                ^^^^^^ cannot infer type for type parameter `T` declared on the trait `AsRef`
+   |
+   = note: multiple `impl`s satisfying `[u8; 12]: AsRef<_>` found in the following crates: `core`, `palette`:
+           - impl<C, N> AsRef<PreAlpha<C>> for [<C as Premultiply>::Scalar; N]
+             where <PreAlpha<C> as ArrayCast>::Array == [<C as Premultiply>::Scalar; N], the constant `N` has type `usize`, C: Premultiply, PreAlpha<C>: ArrayCast, PreAlpha<C>: ?Sized;
+           - impl<C, T, N> AsRef<Alpha<C, T>> for [T; N]
+             where <Alpha<C, T> as ArrayCast>::Array == [T; N], the constant `N` has type `usize`, Alpha<C, T>: ArrayCast, Alpha<C, T>: ?Sized;
+           - impl<O, T, N> AsRef<palette::cast::Packed<O, [T; N]>> for [T; N]
+             where the constant `N` has type `usize`;
+           - impl<T, N> AsRef<[T]> for [T; N]
+             where the constant `N` has type `usize`;
+
+error[E0283]: type annotations needed
+  --> musico_app/src/components/sidebar.rs:33:83
+   |
+33 |     svg::Handle::from_memory(include_bytes!("../../assets/icons/musico_logo.svg").as_ref())
+   |                                                                                   ^^^^^^ cannot infer type for type parameter `T` declared on the trait `AsRef`
+   |
+   = note: multiple `impl`s satisfying `[u8; 12]: AsRef<_>` found in the following crates: `core`, `palette`:
+           - impl<C, N> AsRef<PreAlpha<C>> for [<C as Premultiply>::Scalar; N]
+             where <PreAlpha<C> as ArrayCast>::Array == [<C as Premultiply>::Scalar; N], the constant `N` has type `usize`, C: Premultiply, PreAlpha<C>: ArrayCast, PreAlpha<C>: ?Sized;
+           - impl<C, T, N> AsRef<Alpha<C, T>> for [T; N]
+             where <Alpha<C, T> as ArrayCast>::Array == [T; N], the constant `N` has type `usize`, Alpha<C, T>: ArrayCast, Alpha<C, T>: ?Sized;
+           - impl<O, T, N> AsRef<palette::cast::Packed<O, [T; N]>> for [T; N]
+             where the constant `N` has type `usize`;
+           - impl<T, N> AsRef<[T]> for [T; N]
+             where the constant `N` has type `usize`;
+
+error[E0277]: the trait bound `iced::theme::Svg: From<{closure@musico_app/src/components/sidebar.rs:67:16: 67:43}>` is not satisfied
+  --> musico_app/src/components/sidebar.rs:67:16
+   |
+67 |           .style(move |_theme: &iced::Theme| svg::Appearance {
+   |  __________-----_^
+   | |          |
+   | |          required by a bound introduced by this call
+68 | |             color: Some(if is_active { ACCENT_PURPLE } else { TEXT_SECONDARY }),
+69 | |         });
+   | |_________^ the trait `From<{closure@musico_app/src/components/sidebar.rs:67:16: 67:43}>` is not implemented for `iced::theme::Svg`
+   |
+   = note: required for `{closure@musico_app/src/components/sidebar.rs:67:16: 67:43}` to implement `Into<iced::theme::Svg>`
+note: required by a bound in `iced::widget::Svg::<Theme>::style`
+  --> /home/aryan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/iced_widget-0.12.3/src/svg.rs:83:40
+   |
+83 |     pub fn style(mut self, style: impl Into<Theme::Style>) -> Self {
+   |                                        ^^^^^^^^^^^^^^^^^^ required by this bound in `Svg::<Theme>::style`
+
+error[E0277]: the trait bound `iced::theme::Svg: From<{closure@musico_app/src/components/sidebar.rs:121:32: 121:54}>` is not satisfied
+   --> musico_app/src/components/sidebar.rs:121:32
+    |
+121 |                           .style(|_theme: &iced::Theme| svg::Appearance {
+    |  __________________________-----_^
+    | |                          |
+    | |                          required by a bound introduced by this call
+122 | |                             color: Some(ACCENT_PURPLE),
+123 | |                         }),
+    | |_________________________^ the trait `From<{closure@musico_app/src/components/sidebar.rs:121:32: 121:54}>` is not implemented for `iced::theme::Svg`
+    |
+    = note: required for `{closure@musico_app/src/components/sidebar.rs:121:32: 121:54}` to implement `Into<iced::theme::Svg>`
+note: required by a bound in `iced::widget::Svg::<Theme>::style`
+   --> /home/aryan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/iced_widget-0.12.3/src/svg.rs:83:40
+    |
+ 83 |     pub fn style(mut self, style: impl Into<Theme::Style>) -> Self {
+    |                                        ^^^^^^^^^^^^^^^^^^ required by this bound in `Svg::<Theme>::style`
+
+error[E0277]: the trait bound `iced::theme::Svg: From<{closure@musico_app/src/components/sidebar.rs:174:20: 174:42}>` is not satisfied
+   --> musico_app/src/components/sidebar.rs:174:20
+    |
+174 |               .style(|_theme: &iced::Theme| svg::Appearance {
+    |  ______________-----_^
+    | |              |
+    | |              required by a bound introduced by this call
+175 | |                 color: Some(ACCENT_PURPLE),
+176 | |             }),
+    | |_____________^ the trait `From<{closure@musico_app/src/components/sidebar.rs:174:20: 174:42}>` is not implemented for `iced::theme::Svg`
+    |
+    = note: required for `{closure@musico_app/src/components/sidebar.rs:174:20: 174:42}` to implement `Into<iced::theme::Svg>`
+note: required by a bound in `iced::widget::Svg::<Theme>::style`
+   --> /home/aryan/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/iced_widget-0.12.3/src/svg.rs:83:40
+    |
+ 83 |     pub fn style(mut self, style: impl Into<Theme::Style>) -> Self {
+    |                                        ^^^^^^^^^^^^^^^^^^ required by this bound in `Svg::<Theme>::style`
+
+error[E0609]: no field `base` on type `theme::Palette`
+  --> musico_app/src/components/song_row.rs:53:11
+   |
+53 |         p.base
+   |           ^^^^ unknown field
+   |
+   = note: available fields are: `accent`, `surface`, `border_subtle`, `text_primary`, `text_secondary`, `text_muted`
+
+error[E0609]: no field `base` on type `theme::Palette`
+  --> musico_app/src/components/song_row.rs:57:18
+   |
+57 |             r: p.base.r * 0.7 + p.elevated.r * 0.3,
+   |                  ^^^^ unknown field
+   |
+   = note: available fields are: `accent`, `surface`, `border_subtle`, `text_primary`, `text_secondary`, `text_muted`
+
+error[E0609]: no field `elevated` on type `theme::Palette`
+  --> musico_app/src/components/song_row.rs:57:35
+   |
+57 |             r: p.base.r * 0.7 + p.elevated.r * 0.3,
+   |                                   ^^^^^^^^ unknown field
+   |
+   = note: available fields are: `accent`, `surface`, `border_subtle`, `text_primary`, `text_secondary`, `text_muted`
+
+error[E0609]: no field `base` on type `theme::Palette`
+  --> musico_app/src/components/song_row.rs:58:18
+   |
+58 |             g: p.base.g * 0.7 + p.elevated.g * 0.3,
+   |                  ^^^^ unknown field
+   |
+   = note: available fields are: `accent`, `surface`, `border_subtle`, `text_primary`, `text_secondary`, `text_muted`
+
+error[E0609]: no field `elevated` on type `theme::Palette`
+  --> musico_app/src/components/song_row.rs:58:35
+   |
+58 |             g: p.base.g * 0.7 + p.elevated.g * 0.3,
+   |                                   ^^^^^^^^ unknown field
+   |
+   = note: available fields are: `accent`, `surface`, `border_subtle`, `text_primary`, `text_secondary`, `text_muted`
+
+error[E0609]: no field `base` on type `theme::Palette`
+  --> musico_app/src/components/song_row.rs:59:18
+   |
+59 |             b: p.base.b * 0.7 + p.elevated.b * 0.3,
+   |                  ^^^^ unknown field
+   |
+   = note: available fields are: `accent`, `surface`, `border_subtle`, `text_primary`, `text_secondary`, `text_muted`
+
+error[E0609]: no field `elevated` on type `theme::Palette`
+  --> musico_app/src/components/song_row.rs:59:35
+   |
+59 |             b: p.base.b * 0.7 + p.elevated.b * 0.3,
+   |                                   ^^^^^^^^ unknown field
+   |
+   = note: available fields are: `accent`, `surface`, `border_subtle`, `text_primary`, `text_secondary`, `text_muted`
+
+error[E0609]: no field `highlight` on type `theme::Palette`
+  --> musico_app/src/components/song_row.rs:80:21
+   |
+80 |         hover_bg: p.highlight,
+   |                     ^^^^^^^^^ unknown field
+   |
+   = note: available fields are: `accent`, `surface`, `border_subtle`, `text_primary`, `text_secondary`, `text_muted`
+
+error[E0609]: no field `base` on type `theme::Palette`
+   --> musico_app/src/views/now_playing.rs:118:92
+    |
+118 |         .style(iced::theme::Container::Custom(Box::new(NowPlayingBgStyle(state.art_tint, p.base))))
+    |                                                                                            ^^^^ unknown field
+    |
+    = note: available fields are: `accent`, `surface`, `border_subtle`, `text_primary`, `text_secondary`, `text_muted`
+
+error[E0609]: no field `elevated` on type `theme::Palette`
+   --> musico_app/src/views/library.rs:159:21
+    |
+159 |         hover_bg: p.elevated,
+    |                     ^^^^^^^^ unknown field
+    |
+    = note: available fields are: `accent`, `surface`, `border_subtle`, `text_primary`, `text_secondary`, `text_muted`
+
+error[E0609]: no field `elevated` on type `theme::Palette`
+  --> musico_app/src/views/settings.rs:42:79
+   |
+42 |                 .style(iced::theme::Button::Custom(Box::new(PrimaryBtnStyle(p.elevated, p.highlight))))
+   |                                                                               ^^^^^^^^ unknown field
+   |
+   = note: available fields are: `accent`, `surface`, `border_subtle`, `text_primary`, `text_secondary`, `text_muted`
+
+error[E0609]: no field `highlight` on type `theme::Palette`
+  --> musico_app/src/views/settings.rs:42:91
+   |
+42 |                 .style(iced::theme::Button::Custom(Box::new(PrimaryBtnStyle(p.elevated, p.highlight))))
+   |                                                                                           ^^^^^^^^^ unknown field
+   |
+   = note: available fields are: `accent`, `surface`, `border_subtle`, `text_primary`, `text_secondary`, `text_muted`
+
+error[E0609]: no field `elevated` on type `theme::Palette`
+  --> musico_app/src/views/settings.rs:72:79
+   |
+72 |                 .style(iced::theme::Button::Custom(Box::new(PrimaryBtnStyle(p.elevated, p.highlight))))
+   |                                                                               ^^^^^^^^ unknown field
+   |
+   = note: available fields are: `accent`, `surface`, `border_subtle`, `text_primary`, `text_secondary`, `text_muted`
+
+error[E0609]: no field `highlight` on type `theme::Palette`
+  --> musico_app/src/views/settings.rs:72:91
+   |
+72 |                 .style(iced::theme::Button::Custom(Box::new(PrimaryBtnStyle(p.elevated, p.highlight))))
+   |                                                                                           ^^^^^^^^^ unknown field
+   |
+   = note: available fields are: `accent`, `surface`, `border_subtle`, `text_primary`, `text_secondary`, `text_muted`
+
+Some errors have detailed explanations: E0277, E0283, E0609.
+For more information about an error, try `rustc --explain E0277`.
+warning: `musico_app` (bin "musico_app") generated 2 warnings
+error: could not compile `musico_app` (bin "musico_app") due to 22 previous errors; 2 warnings emitted

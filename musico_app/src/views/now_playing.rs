@@ -22,7 +22,7 @@ pub fn now_playing<'a, Message: 'a + Clone>(
     // We achieve this with a container style.
     
     // Album Art
-    let art_size = if state.window_width < 700.0 { 240.0 } else { theme::NOW_PLAYING_ART_MAX };
+    let art_size = 152.0;
     
     // In a real implementation we would have the image handle in state.
     // For now we pass None to render the colored rectangle fallback.
@@ -35,74 +35,73 @@ pub fn now_playing<'a, Message: 'a + Clone>(
 
     let mut content = column![].align_items(Alignment::Center).spacing(20);
 
-    if let Some(song) = &state.current_song {
-        let title = text(&song.title)
-            .font(theme::FONT_DISPLAY)
-            .size(theme::TEXT_HERO)
-            .style(p.text_primary);
+    let (title_text, artist_text) = match &state.current_song {
+        Some(song) => (song.title.clone(), song.artist.clone()),
+        None => ("Not Playing".to_string(), "Select a track from your library".to_string()),
+    };
 
-        let artist_album = text(format!("{} · {}", song.artist, song.album))
-            .font(theme::FONT_TEXT)
-            .size(theme::TEXT_BODY)
-            .style(p.text_muted);
+    let title_col = column![
+        text(title_text).font(theme::FONT_DISPLAY).size(17.0).style(p.text_primary),
+        text(artist_text).font(theme::FONT_TEXT).size(13.0).style(p.text_muted)
+    ].spacing(3);
 
-        let seek_container = column![
-            seek_bar(state.position_secs, state.duration_secs, on_seek),
-            row![
-                text(format_time(state.position_secs)).size(theme::TEXT_CAPTION).style(p.text_secondary),
-                Space::with_width(Length::Fill),
-                text(format_time(state.duration_secs)).size(theme::TEXT_CAPTION).style(p.text_secondary),
-            ]
-        ].spacing(8);
+    let actions_row = row![
+        button(text("♡").size(16.0).style(p.text_muted)).style(iced::theme::Button::Text),
+        button(text("⋮").size(16.0).style(p.text_muted)).style(iced::theme::Button::Text),
+    ].spacing(8);
 
-        let is_playing = matches!(state.playback_status, musico_playback::PlaybackStatus::Playing);
-        
-        let controls = row![
-            button(text("🔀").size(20).style(p.text_secondary)).style(iced::theme::Button::Text),
-            Space::with_width(20),
-            button(text("⏮").size(24).style(p.text_primary)).on_press(on_previous.clone()).style(iced::theme::Button::Text),
-            Space::with_width(20),
-            play_button(is_playing, state.art_tint, on_toggle_play.clone()),
-            Space::with_width(20),
-            button(text("⏭").size(24).style(p.text_primary)).on_press(on_next.clone()).style(iced::theme::Button::Text),
-            Space::with_width(20),
-            button(text("🔁").size(20).style(p.text_secondary)).style(iced::theme::Button::Text),
-        ].align_items(Alignment::Center);
+    let meta_row = row![title_col, Space::with_width(Length::Fill), actions_row]
+        .width(Length::Fill)
+        .align_items(Alignment::Center);
 
-        content = content.push(art_container)
-            .push(title)
-            .push(artist_album)
-            .push(seek_container)
-            .push(controls);
+    let seek_container = column![
+        seek_bar(state.position_secs, state.duration_secs, on_seek),
+        row![
+            text(format_time(state.position_secs)).font(theme::FONT_ROUNDED).size(11.0).style(p.text_secondary),
+            Space::with_width(Length::Fill),
+            text(format_time(state.duration_secs)).font(theme::FONT_ROUNDED).size(11.0).style(p.text_secondary),
+        ]
+    ].spacing(5).width(Length::Fill);
 
-        // Recommendations
-        if !state.recommendations.is_empty() {
-            let mut recs_col = column![
-                Space::with_height(20),
-                container(Space::with_height(1)).width(Length::Fill).style(iced::theme::Container::Custom(Box::new(DividerStyle(p.border_subtle)))),
-                Space::with_height(20),
-                text("UP NEXT").font(theme::FONT_ROUNDED).size(theme::TEXT_CAPTION).style(p.text_muted)
-            ].spacing(10).width(Length::Fill);
+    let is_playing = matches!(state.playback_status, musico_playback::PlaybackStatus::Playing);
+    
+    let controls = row![
+        button(text("🔀").size(20).style(p.text_secondary)).style(iced::theme::Button::Text),
+        Space::with_width(20),
+        button(text("⏮").size(24).style(p.text_primary)).on_press(on_previous.clone()).style(iced::theme::Button::Text),
+        Space::with_width(20),
+        play_button(is_playing, state.art_tint, on_toggle_play.clone()),
+        Space::with_width(20),
+        button(text("⏭").size(24).style(p.text_primary)).on_press(on_next.clone()).style(iced::theme::Button::Text),
+        Space::with_width(20),
+        button(text("🔁").size(20).style(p.text_secondary)).style(iced::theme::Button::Text),
+    ].align_items(Alignment::Center);
 
-            for (i, rec) in state.recommendations.iter().take(5).enumerate() {
-                recs_col = recs_col.push(song_row(
-                    &rec.record,
-                    i,
-                    false, // is_playing
-                    &on_play_recommendation,
-                    Some(&on_queue_recommendation)
-                ));
-            }
+    content = content.push(art_container)
+        .push(meta_row)
+        .push(seek_container)
+        .push(controls);
 
-            content = content.push(recs_col);
+    // Recommendations
+    if !state.recommendations.is_empty() {
+        let mut recs_col = column![
+            Space::with_height(20),
+            container(Space::with_height(1)).width(Length::Fill).style(iced::theme::Container::Custom(Box::new(DividerStyle(p.border_subtle)))),
+            Space::with_height(20),
+            text("UP NEXT").font(theme::FONT_ROUNDED).size(theme::TEXT_CAPTION).style(p.text_muted)
+        ].spacing(10).width(Length::Fill);
+
+        for (i, rec) in state.recommendations.iter().take(5).enumerate() {
+            recs_col = recs_col.push(song_row(
+                &rec.record,
+                i,
+                false, // is_playing
+                &on_play_recommendation,
+                Some(&on_queue_recommendation)
+            ));
         }
-    } else {
-        content = content.push(
-            text("Nothing is playing")
-                .font(theme::FONT_DISPLAY)
-                .size(theme::TEXT_HERO)
-                .style(p.text_muted)
-        );
+
+        content = content.push(recs_col);
     }
 
     let scrollable_content = scrollable(
@@ -127,9 +126,9 @@ fn play_button<'a, Message: 'a + Clone>(
     let icon = if is_playing { "⏸" } else { "▶" };
     
     button(
-        container(text(icon).size(28).style(Color::WHITE))
-            .width(Length::Fixed(72.0))
-            .height(Length::Fixed(72.0))
+        container(text(icon).size(20).style(Color::WHITE))
+            .width(Length::Fixed(50.0))
+            .height(Length::Fixed(50.0))
             .center_x()
             .center_y()
     )
@@ -174,7 +173,7 @@ impl iced::widget::button::StyleSheet for PlayButtonStyle {
             border: iced::Border {
                 color: iced::Color::TRANSPARENT,
                 width: 0.0,
-                radius: 36.0.into(),
+                radius: 15.0.into(),
             },
             ..Default::default()
         }
@@ -192,7 +191,7 @@ impl iced::widget::button::StyleSheet for PlayButtonStyle {
             border: iced::Border {
                 color: iced::Color::TRANSPARENT,
                 width: 0.0,
-                radius: 39.0.into(),
+                radius: 15.0.into(),
             },
             ..Default::default()
         }
@@ -204,7 +203,7 @@ impl iced::widget::button::StyleSheet for PlayButtonStyle {
             border: iced::Border {
                 color: iced::Color::TRANSPARENT,
                 width: 0.0,
-                radius: 34.0.into(),
+                radius: 15.0.into(),
             },
             ..Default::default()
         }

@@ -63,16 +63,26 @@ impl AppState {
     pub fn new() -> Self {
         let music_folder = dirs::audio_dir();
 
+        let dummy_song = musico_playback::SongInfo {
+            id: "dummy".to_string(),
+            file_path: "/dummy".to_string(),
+            title: "Midnight City".to_string(),
+            artist: "M83".to_string(),
+            album: "Hurry Up, We're Dreaming".to_string(),
+            duration_secs: 243.0,
+            cover_art: None,
+        };
+
         Self {
             active_view: View::NowPlaying,
             sidebar_collapsed: false,
             window_width: 900.0,
             window_height: 600.0,
 
-            current_song: None,
-            playback_status: PlaybackStatus::Stopped,
-            position_secs: 0.0,
-            duration_secs: 0.0,
+            current_song: Some(dummy_song),
+            playback_status: PlaybackStatus::Playing,
+            position_secs: 65.0,
+            duration_secs: 243.0,
             volume: 1.0,
             listened_secs: 0,
             is_muted: false,
