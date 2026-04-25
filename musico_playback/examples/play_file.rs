@@ -13,7 +13,7 @@ fn main() {
     // Replace with an actual audio file path on your system.
     let file_path = std::env::args()
         .nth(1)
-        .unwrap_or_else(|| "./test.flac".to_string());
+        .unwrap_or_else(|| "./test_audio_file.mp3".to_string());
 
     println!("musico_playback example — playing: {file_path}");
 

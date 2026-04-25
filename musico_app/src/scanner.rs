@@ -36,8 +36,13 @@ pub async fn scan_and_index(
 }
 
 fn is_audio_file(path: &Path) -> bool {
-    matches!(
-        path.extension().and_then(|e| e.to_str()),
-        Some("mp3" | "flac" | "ogg" | "wav" | "m4a" | "aac" | "opus")
-    )
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        let ext = ext.to_lowercase();
+        matches!(
+            ext.as_str(),
+            "mp3" | "flac" | "ogg" | "wav" | "m4a" | "aac" | "opus" | "alac" | "wma" | "mp4" | "m4b"
+        )
+    } else {
+        false
+    }
 }
