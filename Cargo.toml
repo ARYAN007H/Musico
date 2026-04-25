@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "musico_recommender",
+    "musico_playback",
+    "musico_app"
+]
+resolver = "2"
