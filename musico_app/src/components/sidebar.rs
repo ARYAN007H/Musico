@@ -1,185 +1,248 @@
-use iced::widget::{button, column, container, row, text, Space};
-use iced::{Alignment, Color, Element, Length};
-use crate::state::{AppState, View};
-use crate::theme::{self, Palette};
+// components/sidebar.rs — Musico sidebar navigation
+// Icons drawn as inline SVG paths. Active item has a left-edge accent bar.
 
-// In a real app we'd load an icon font, but we'll use Unicode here for zero-dependency native primitives.
-const ICON_HOME: &str = "🏠";
-const ICON_LIBRARY: &str = "📚";
-const ICON_QUEUE: &str = "≡";
-const ICON_SETTINGS: &str = "⚙";
+use iced::{
+    Alignment, Background, Border, Color, Element, Length,
+    widget::{button, column, container, row, svg, text, vertical_space, Space},
+};
+use iced::widget::container::Appearance;
 
-pub fn sidebar<'a, Message: 'a + Clone>(
-    state: &AppState,
-    navigate_to: impl Fn(View) -> Message + 'a,
-    toggle_sidebar: Message,
+use crate::{
+    app::Message,
+    state::{AppState, View},
+    theme::{self, *},
+};
+
+// ─── Icon SVG handles (embed at compile time) ─────────────────────────────────
+// Place these SVG files in musico_app/assets/icons/
+// Each is a 20x20 single-path icon.
+
+fn icon_now_playing() -> svg::Handle {
+    svg::Handle::from_memory(include_bytes!("../../assets/icons/disc.svg").as_ref())
+}
+fn icon_library() -> svg::Handle {
+    svg::Handle::from_memory(include_bytes!("../../assets/icons/library.svg").as_ref())
+}
+fn icon_queue() -> svg::Handle {
+    svg::Handle::from_memory(include_bytes!("../../assets/icons/queue.svg").as_ref())
+}
+fn icon_settings() -> svg::Handle {
+    svg::Handle::from_memory(include_bytes!("../../assets/icons/settings.svg").as_ref())
+}
+fn icon_musico() -> svg::Handle {
+    svg::Handle::from_memory(include_bytes!("../../assets/icons/musico_logo.svg").as_ref())
+}
+
+// ─── Nav item component ───────────────────────────────────────────────────────
+
+fn nav_item<'a>(
+    label: &'a str,
+    icon: svg::Handle,
+    target: View,
+    current: View,
 ) -> Element<'a, Message> {
-    let p = Palette::default_palette();
-    
-    let width = if state.sidebar_collapsed {
-        theme::SIDEBAR_WIDTH_RAIL
-    } else {
-        theme::SIDEBAR_WIDTH_FULL
-    };
+    let is_active = current == target;
 
-    let logo_text = if state.sidebar_collapsed { "M" } else { "Musico" };
+    // Left accent bar (3px wide purple line on active)
+    let accent_bar = container(Space::new(Length::Fixed(3.0), Length::Fixed(18.0)))
+        .style(move |_theme: &iced::Theme| {
+            container::Appearance {
+                background: if is_active {
+                    Some(Background::Color(ACCENT_PURPLE))
+                } else {
+                    None
+                },
+                border: Border {
+                    radius: [0.0, 3.0, 3.0, 0.0].into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+        });
 
-    let logo: Element<'_, Message> = container(
-        text(logo_text)
-            .font(theme::FONT_DISPLAY)
-            .size(24)
-            .style(iced::theme::Text::Color(p.text_primary)),
-    )
-    .width(Length::Fill)
-    .padding(if state.sidebar_collapsed { [20, 0, 20, 0] } else { [20, 0, 20, 20] })
-    .center_x()
-    .into();
+    // Icon tinted based on active state
+    let icon_widget = svg(icon)
+        .width(Length::Fixed(16.0))
+        .height(Length::Fixed(16.0))
+        .style(move |_theme: &iced::Theme| svg::Appearance {
+            color: Some(if is_active { ACCENT_PURPLE } else { TEXT_SECONDARY }),
+        });
 
-    let toggle_btn: Element<'_, Message> = button(
-        text(if state.sidebar_collapsed { "→" } else { "←" })
-            .size(16)
-            .style(iced::theme::Text::Color(p.text_muted))
-    )
-    .on_press(toggle_sidebar)
-    .style(iced::theme::Button::Text)
-    .into();
+    let label_widget = text(label)
+        .size(SIZE_LABEL)
+        .color(if is_active { TEXT_PRIMARY } else { TEXT_SECONDARY });
 
-    let logo_row: Element<'_, Message> = if state.sidebar_collapsed {
-        column![logo, toggle_btn].align_items(Alignment::Center).into()
-    } else {
-        row![
-            logo,
-            Space::with_width(Length::Fill),
-            container(toggle_btn).padding([0, 10, 0, 0])
-        ]
-        .align_items(Alignment::Center)
-        .into()
-    };
+    let inner = row![icon_widget, label_widget]
+        .spacing(10)
+        .align_y(Alignment::Center)
+        .padding([9, 12, 9, 12])
+        .width(Length::Fill);
 
-    let nav_items = column![
-        nav_item(ICON_HOME, "Home", View::NowPlaying, state, &navigate_to),
-        nav_item(ICON_LIBRARY, "Library", View::Library, state, &navigate_to),
-        nav_item(ICON_QUEUE, "Queue", View::Queue, state, &navigate_to),
+    let btn = button(inner)
+        .on_press(Message::Navigate(target))
+        .style(iced::theme::Button::Custom(Box::new(NavButton { is_active })))
+        .width(Length::Fill);
+
+    // Wrap in a row so the accent bar sits flush-left outside the button radius
+    row![
+        accent_bar,
+        container(btn).padding([0, 4]).width(Length::Fill),
     ]
-    .spacing(4);
-
-    let settings_item = nav_item(ICON_SETTINGS, "Settings", View::Settings, state, &navigate_to);
-
-    container(
-        column![
-            logo_row,
-            Space::with_height(20),
-            nav_items,
-            Space::with_height(Length::Fill),
-            settings_item,
-        ]
-    )
-    .width(width)
-    .height(Length::Fill)
-    .style(iced::theme::Container::Transparent) // Base style can be customised with custom container styles if needed
+    .align_y(Alignment::Center)
     .into()
 }
 
-fn nav_item<'a, Message: 'a + Clone>(
-    icon: &'static str,
-    label: &'static str,
-    view: View,
-    state: &AppState,
-    on_press: &impl Fn(View) -> Message,
-) -> Element<'a, Message> {
-    let p = Palette::default_palette();
-    let is_active = state.active_view == view;
-    let is_collapsed = state.sidebar_collapsed;
+// ─── Now-playing mini card (bottom of sidebar above settings) ─────────────────
 
-    // We can simulate the active indicator border by using a Row with a colored thin container
-    let indicator_color = if is_active { state.art_tint } else { Color::TRANSPARENT };
-    
-    let indicator: Element<'_, Message> = container(Space::with_width(3))
-        .height(Length::Fill)
-        .style(iced::theme::Container::Custom(Box::new(IndicatorStyle(indicator_color))))
-        .into();
+fn now_playing_mini<'a>(state: &'a AppState) -> Element<'a, Message> {
+    if let Some(song) = &state.playback.current_song {
+        let art = match &song.cover_art {
+            Some(bytes) => {
+                let handle = iced::widget::image::Handle::from_memory(bytes.clone());
+                container(
+                    iced::widget::image(handle)
+                        .width(Length::Fixed(34.0))
+                        .height(Length::Fixed(34.0)),
+                )
+                .style(|_theme: &iced::Theme| container::Appearance {
+                    border: Border {
+                        radius: 7.0.into(),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
+            }
+            None => {
+                container(
+                    svg(icon_now_playing())
+                        .width(Length::Fixed(16.0))
+                        .height(Length::Fixed(16.0))
+                        .style(|_theme: &iced::Theme| svg::Appearance {
+                            color: Some(ACCENT_PURPLE),
+                        }),
+                )
+                .width(Length::Fixed(34.0))
+                .height(Length::Fixed(34.0))
+                .style(|_theme: &iced::Theme| container::Appearance {
+                    background: Some(Background::Color(with_alpha(ACCENT_PURPLE, 0.12))),
+                    border: Border {
+                        radius: 7.0.into(),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
+                .align_x(iced::alignment::Horizontal::Center)
+                .align_y(iced::alignment::Vertical::Center)
+            }
+        };
 
-    let icon_text = text(icon).size(20);
-    let label_text = text(label).font(theme::FONT_TEXT).size(theme::TEXT_BODY);
-
-    let content: Element<'_, Message> = if is_collapsed {
-        container(icon_text).width(Length::Fill).center_x().into()
-    } else {
-        container(row![Space::with_width(12), icon_text, Space::with_width(12), label_text].align_items(Alignment::Center))
-            .width(Length::Fill)
-            .into()
-    };
-
-    let bg_color = if is_active { p.highlight } else { Color::TRANSPARENT };
-    let text_color = if is_active { p.text_primary } else { p.text_secondary };
-
-    let btn = button(
-        row![
-            indicator,
-            container(content).padding([10, 0])
+        let info = column![
+            text(&song.title)
+                .size(SIZE_CAPTION)
+                .color(TEXT_PRIMARY)
+                .shaping(text::Shaping::Advanced),
+            text(&song.artist)
+                .size(11.0)
+                .color(TEXT_SECONDARY)
+                .shaping(text::Shaping::Advanced),
         ]
-        .height(40)
-    )
-    .on_press(on_press(view))
-    .width(Length::Fill)
-    .style(iced::theme::Button::Custom(Box::new(NavItemStyle {
-        bg: bg_color,
-        text: text_color,
-        hover_bg: p.elevated,
-        hover_text: p.text_primary,
-    })));
+        .spacing(1)
+        .width(Length::Fill);
 
-    // In a real app we'd wrap in tooltip if collapsed, but tooltip is in iced core, not always easy without iced_aw depending on version
-    // Iced 0.12 has `iced::widget::tooltip`.
-    if is_collapsed {
-        iced::widget::tooltip(
-            btn,
-            label,
-            iced::widget::tooltip::Position::Right,
+        container(
+            row![art, info]
+                .spacing(10)
+                .align_y(Alignment::Center)
+                .padding([10, 12]),
         )
-        .style(iced::theme::Container::Box)
+        .style(theme::elevated_card)
+        .width(Length::Fill)
         .into()
     } else {
-        btn.into()
+        Space::new(Length::Fixed(0.0), Length::Fixed(0.0)).into()
     }
 }
 
-// Custom styles for Iced 0.12
+// ─── Logo section ─────────────────────────────────────────────────────────────
 
-struct IndicatorStyle(iced::Color);
-impl iced::widget::container::StyleSheet for IndicatorStyle {
-    type Style = iced::Theme;
-    fn appearance(&self, _style: &Self::Style) -> iced::widget::container::Appearance {
-        iced::widget::container::Appearance {
-            background: Some(self.0.into()),
+fn logo_section<'a>() -> Element<'a, Message> {
+    let logo_icon = container(
+        svg(icon_musico())
+            .width(Length::Fixed(18.0))
+            .height(Length::Fixed(18.0))
+            .style(|_theme: &iced::Theme| svg::Appearance {
+                color: Some(ACCENT_PURPLE),
+            }),
+    )
+    .width(Length::Fixed(32.0))
+    .height(Length::Fixed(32.0))
+    .style(|_theme: &iced::Theme| container::Appearance {
+        background: Some(Background::Color(ELEVATED)),
+        border: Border {
+            radius: 10.0.into(),
             ..Default::default()
-        }
-    }
+        },
+        ..Default::default()
+    })
+    .align_x(iced::alignment::Horizontal::Center)
+    .align_y(iced::alignment::Vertical::Center);
+
+    container(
+        row![
+            logo_icon,
+            text("Musico")
+                .size(18.0)
+                .color(TEXT_PRIMARY)
+                .font(iced::Font {
+                    weight: iced::font::Weight::Semibold,
+                    ..iced::Font::DEFAULT
+                }),
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center),
+    )
+    .padding([22, 20, 18, 20])
+    .into()
 }
 
-struct NavItemStyle {
-    bg: iced::Color,
-    text: iced::Color,
-    hover_bg: iced::Color,
-    hover_text: iced::Color,
-}
+// ─── Public: build the full sidebar ──────────────────────────────────────────
 
-impl iced::widget::button::StyleSheet for NavItemStyle {
-    type Style = iced::Theme;
-    
-    fn active(&self, _style: &Self::Style) -> iced::widget::button::Appearance {
-        iced::widget::button::Appearance {
-            background: Some(self.bg.into()),
-            text_color: self.text,
-            ..Default::default()
-        }
-    }
-    
-    fn hovered(&self, _style: &Self::Style) -> iced::widget::button::Appearance {
-        iced::widget::button::Appearance {
-            background: Some(self.hover_bg.into()),
-            text_color: self.hover_text,
-            ..Default::default()
-        }
-    }
+pub fn sidebar<'a>(state: &'a AppState) -> Element<'a, Message> {
+    let current = state.current_view;
+
+    let nav_section = column![
+        nav_item("Now Playing", icon_now_playing(), View::NowPlaying, current),
+        nav_item("Library",     icon_library(),     View::Library,    current),
+        nav_item("Queue",       icon_queue(),        View::Queue,      current),
+    ]
+    .spacing(2)
+    .padding([4, 10]);
+
+    let bottom_section = column![
+        now_playing_mini(state),
+        container(Space::new(Length::Fill, Length::Fixed(1.0)))
+            .style(|_theme: &iced::Theme| container::Appearance {
+                background: Some(Background::Color(BORDER_SUBTLE)),
+                ..Default::default()
+            })
+            .width(Length::Fill)
+            .padding([0, 8]),
+        nav_item("Settings", icon_settings(), View::Settings, current),
+    ]
+    .spacing(10)
+    .padding([10, 0]);
+
+    container(
+        column![
+            logo_section(),
+            nav_section,
+            vertical_space(),
+            bottom_section,
+        ]
+        .height(Length::Fill),
+    )
+    .style(theme::sidebar_container)
+    .width(Length::Fixed(SIDEBAR_WIDTH))
+    .height(Length::Fill)
+    .into()
 }
