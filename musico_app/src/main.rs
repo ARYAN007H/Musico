@@ -1,5 +1,6 @@
 mod app;
 mod components;
+mod config;
 mod icons;
 mod scanner;
 mod state;

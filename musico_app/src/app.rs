@@ -4,26 +4,28 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use iced::{executor, Application, Command, Element, Length, Subscription, Color};
 use iced::widget::{container, row};
+use iced::keyboard;
 
 use musico_playback::{PlaybackEngine, PlaybackEvent, PlaybackStatus, SongInfo};
 use musico_recommender::{MusicRecommender, SongRecord, RecommendedSong};
 
-use crate::state::{AppState, View, LibraryViewMode};
+use crate::state::{AppState, View, LibraryViewMode, ShuffleMode, RepeatMode};
 use crate::theme::{self, Palette};
 use crate::scanner;
+use crate::config::{self, AppConfig};
 
 use crate::views::{now_playing, library, queue, settings};
 use crate::components::sidebar;
 
 #[derive(Clone)]
+#[allow(dead_code)]
 pub enum Message {
     // Playback
     PlaySong(SongRecord),
     Pause,
     Resume,
-    Stop,
-    Previous,
     Next,
+    Previous,
     Seek(f32),
     SetVolume(f32),
     ToggleMute,
@@ -34,7 +36,6 @@ pub enum Message {
 
     // Navigation
     NavigateTo(View),
-    ToggleSidebar,
 
     // Library
     SearchChanged(String),
@@ -43,16 +44,20 @@ pub enum Message {
     IndexProgress(usize, usize),
     IndexComplete(Vec<SongRecord>),
 
-    // Recommendations
+    // Recommendations (fire-and-forget, arrives async)
     RecommendationsUpdated(Vec<RecommendedSong>),
     AddToQueue(SongRecord),
     RemoveFromQueue(usize),
 
-    // Settings
-    MusicFolderChanged(PathBuf),
+    // Shuffle / Repeat
+    ToggleShuffle,
+    ToggleRepeat,
 
-    // Dynamic theming
+    // Settings
+    PickFolder,
+    MusicFolderChanged(PathBuf),
     ArtColorExtracted(Color),
+    SetAccentColor(Color),
 
     // Window
     WindowResized(f32, f32),
@@ -61,6 +66,9 @@ pub enum Message {
     RecommenderReady(Arc<Mutex<MusicRecommender>>),
     PlaybackEngineReady(Arc<PlaybackEngine>),
     LoadAllSongs(Vec<SongRecord>),
+
+    // Keyboard
+    KeyPressed(keyboard::Key),
 }
 
 impl std::fmt::Debug for Message {
@@ -83,8 +91,13 @@ impl Application for Musico {
         // Initialization commands
         let init_recommender = Command::perform(
             async {
-                let db_path = "/tmp/musico_db";
-                let recommender = MusicRecommender::new(db_path).expect("Failed to init recommender");
+                let db_path = dirs::data_dir()
+                    .unwrap_or_else(|| PathBuf::from("/tmp"))
+                    .join("musico")
+                    .join("db");
+                std::fs::create_dir_all(&db_path).ok();
+                let db_str = db_path.to_string_lossy().to_string();
+                let recommender = MusicRecommender::new(&db_str).expect("Failed to init recommender");
                 Arc::new(Mutex::new(recommender))
             },
             Message::RecommenderReady,
@@ -102,7 +115,11 @@ impl Application for Musico {
     }
 
     fn title(&self) -> String {
-        "Musico".to_string()
+        if let Some(song) = &self.0.current_song {
+            format!("{} — Musico", song.title)
+        } else {
+            "Musico".to_string()
+        }
     }
 
     fn theme(&self) -> iced::Theme {
@@ -133,11 +150,14 @@ impl Application for Musico {
                 self.0.library = songs.clone();
                 self.0.filtered_library = songs;
             }
+
+            // ── Playback ──────────────────────────────────────────────
             Message::PlaySong(record) => {
                 if let Some(engine) = &self.0.playback {
                     let song_info = record_to_song_info(&record);
                     let _ = engine.play(song_info);
                     
+                    // Fire-and-forget: fetch recommendations async WITHOUT blocking playback.
                     if let Some(rec) = &self.0.recommender {
                         let rec_clone = rec.clone();
                         let current_id = record.id.clone();
@@ -164,11 +184,6 @@ impl Application for Musico {
                     let _ = engine.resume();
                 }
             }
-            Message::Stop => {
-                if let Some(engine) = &self.0.playback {
-                    let _ = engine.stop();
-                }
-            }
             Message::Previous => {
                 if let Some(engine) = &self.0.playback {
                     if let Some(prev) = self.0.queue.previous() {
@@ -177,11 +192,8 @@ impl Application for Musico {
                 }
             }
             Message::Next => {
-                if let Some(engine) = &self.0.playback {
-                    if let Some(next) = self.0.queue.next() {
-                        let _ = engine.play(next.clone());
-                    }
-                }
+                self.play_next();
+                return Command::none();
             }
             Message::Seek(secs) => {
                 if let Some(engine) = &self.0.playback {
@@ -192,12 +204,16 @@ impl Application for Musico {
                 if let Some(engine) = &self.0.playback {
                     let _ = engine.set_volume(vol);
                 }
+                self.0.volume = vol;
+                self.save_config();
             }
             Message::ToggleMute => {
                 if let Some(engine) = &self.0.playback {
                     let _ = engine.toggle_mute();
                 }
             }
+
+            // ── Playback Polling ──────────────────────────────────────
             Message::PlaybackTick => {
                 let mut cmds = Vec::new();
                 if let Some(engine) = &self.0.playback {
@@ -253,21 +269,24 @@ impl Application for Musico {
                         self.0.listened_secs = listened_secs;
                     }
                     PlaybackEvent::SongEnded { song_id, listened_secs, duration_secs } => {
+                        // Log the listen event.
                         if let Some(rec) = &self.0.recommender {
-                            let guard: std::sync::MutexGuard<'_, MusicRecommender> = rec.lock().unwrap();
+                            let guard = rec.lock().unwrap();
                             let _ = guard.log_listen(&song_id, listened_secs, duration_secs as u32);
                         }
                         
-                        // Play next from queue
-                        if let Some(next_song) = self.0.queue.next() {
-                            return Command::perform(async { next_song }, |_song| {
-                                // Find song record
-                                // Hack: We convert song_info to song_record for play message
-                                // But play message expects song_record.
-                                // We can just call play directly on engine.
-                                Message::Next
-                            });
+                        // Handle repeat mode.
+                        if self.0.repeat_mode == RepeatMode::One {
+                            if let Some(song) = &self.0.current_song {
+                                if let Some(engine) = &self.0.playback {
+                                    let _ = engine.play(song.clone());
+                                }
+                            }
+                            return Command::none();
                         }
+
+                        // Play next from queue or smart radio.
+                        self.play_next();
                     }
                     PlaybackEvent::BufferingStarted => {
                         self.0.playback_status = PlaybackStatus::Buffering;
@@ -284,12 +303,13 @@ impl Application for Musico {
                     _ => {}
                 }
             }
+
+            // ── Navigation ────────────────────────────────────────────
             Message::NavigateTo(view) => {
                 self.0.active_view = view;
             }
-            Message::ToggleSidebar => {
-                self.0.sidebar_collapsed = !self.0.sidebar_collapsed;
-            }
+
+            // ── Library ───────────────────────────────────────────────
             Message::SearchChanged(q) => {
                 self.0.search_query = q.clone();
                 let lower_q = q.to_lowercase();
@@ -307,6 +327,7 @@ impl Application for Musico {
                     LibraryViewMode::Grid => LibraryViewMode::List,
                     LibraryViewMode::List => LibraryViewMode::Grid,
                 };
+                self.save_config();
             }
             Message::ScanLibrary => {
                 if let Some(folder) = &self.0.music_folder {
@@ -336,34 +357,113 @@ impl Application for Musico {
                 self.0.library = records.clone();
                 self.0.filtered_library = records;
             }
+
+            // ── Recommendations ───────────────────────────────────────
             Message::RecommendationsUpdated(recs) => {
                 self.0.recommendations = recs;
             }
             Message::AddToQueue(record) => {
                 self.0.queue.push_back(record_to_song_info(&record));
             }
-            Message::RemoveFromQueue(_) => {
-                // Not fully implemented in queue yet
+            Message::RemoveFromQueue(idx) => {
+                self.0.queue.remove_at(idx);
+            }
+
+            // ── Shuffle / Repeat ──────────────────────────────────────
+            Message::ToggleShuffle => {
+                self.0.shuffle_mode = match self.0.shuffle_mode {
+                    ShuffleMode::Off => ShuffleMode::Shuffle,
+                    ShuffleMode::Shuffle => ShuffleMode::SmartRadio,
+                    ShuffleMode::SmartRadio => ShuffleMode::Off,
+                };
+                if self.0.shuffle_mode == ShuffleMode::Shuffle {
+                    self.0.queue.shuffle();
+                }
+            }
+            Message::ToggleRepeat => {
+                self.0.repeat_mode = match self.0.repeat_mode {
+                    RepeatMode::Off => RepeatMode::All,
+                    RepeatMode::All => RepeatMode::One,
+                    RepeatMode::One => RepeatMode::Off,
+                };
+            }
+
+            // ── Settings ──────────────────────────────────────────────
+            Message::PickFolder => {
+                return Command::perform(
+                    async {
+                        let folder = rfd::AsyncFileDialog::new()
+                            .set_title("Select Music Folder")
+                            .pick_folder()
+                            .await;
+                        folder.map(|f| f.path().to_path_buf())
+                    },
+                    |maybe_path| {
+                        if let Some(path) = maybe_path {
+                            Message::MusicFolderChanged(path)
+                        } else {
+                            // User cancelled — no-op, just navigate back to settings.
+                            Message::NavigateTo(View::Settings)
+                        }
+                    },
+                );
             }
             Message::MusicFolderChanged(path) => {
                 self.0.music_folder = Some(path);
+                self.save_config();
             }
             Message::ArtColorExtracted(color) => {
                 self.0.art_dominant_color = Some(color);
                 self.0.art_tint = color;
             }
+            Message::SetAccentColor(color) => {
+                self.0.art_tint = color;
+                self.save_config();
+            }
+
+            // ── Window ────────────────────────────────────────────────
             Message::WindowResized(w, h) => {
                 self.0.window_width = w;
                 self.0.window_height = h;
+            }
+
+            // ── Keyboard ──────────────────────────────────────────────
+            Message::KeyPressed(key) => {
+                return self.handle_key(key);
             }
         }
         Command::none()
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        let events = iced::event::listen_with(|event, status| match (event, status) {
-            (iced::Event::Window(_, iced::window::Event::Resized { width, height }), _) => {
+        let events = iced::event::listen_with(|event, _status| match event {
+            iced::Event::Window(_, iced::window::Event::Resized { width, height }) => {
                 Some(Message::WindowResized(width as f32, height as f32))
+            }
+            iced::Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
+                // Only capture shortcuts when no text input is focused.
+                // We'll handle modifier-based shortcuts and unmodified keys.
+                match &key {
+                    keyboard::Key::Named(named) => match named {
+                        keyboard::key::Named::Space => Some(Message::KeyPressed(key)),
+                        keyboard::key::Named::ArrowLeft => Some(Message::KeyPressed(key)),
+                        keyboard::key::Named::ArrowRight => Some(Message::KeyPressed(key)),
+                        keyboard::key::Named::ArrowUp => Some(Message::KeyPressed(key)),
+                        keyboard::key::Named::ArrowDown => Some(Message::KeyPressed(key)),
+                        keyboard::key::Named::Escape => Some(Message::KeyPressed(key)),
+                        _ => None,
+                    },
+                    keyboard::Key::Character(c) => {
+                        let ch = c.as_str();
+                        match ch {
+                            "n" | "p" | "s" | "r" if !modifiers.shift() => {
+                                Some(Message::KeyPressed(key))
+                            }
+                            _ => None,
+                        }
+                    }
+                    _ => None,
+                }
             }
             _ => None,
         });
@@ -424,6 +524,8 @@ impl Musico {
                 Message::Seek,
                 Message::PlaySong,
                 Message::AddToQueue,
+                Message::ToggleShuffle,
+                Message::ToggleRepeat,
             ),
             View::Library => library(
                 &self.0,
@@ -442,9 +544,9 @@ impl Musico {
             ),
             View::Settings => settings(
                 &self.0,
-                Message::MusicFolderChanged(PathBuf::from("/tmp/new_music")), // Mock for now
+                Message::PickFolder,
                 Message::ScanLibrary,
-                |c| { Message::ArtColorExtracted(c) }, // Just set it directly
+                |c| Message::SetAccentColor(c),
             ),
         }
     }
@@ -485,6 +587,139 @@ impl Musico {
         };
 
         row![sidebar, main].spacing(16).into()
+    }
+
+    /// Handles keyboard shortcuts.
+    fn handle_key(&mut self, key: keyboard::Key) -> Command<Message> {
+        match key {
+            keyboard::Key::Named(keyboard::key::Named::Space) => {
+                if matches!(self.0.playback_status, PlaybackStatus::Playing) {
+                    if let Some(engine) = &self.0.playback {
+                        let _ = engine.pause();
+                    }
+                } else if matches!(self.0.playback_status, PlaybackStatus::Paused) {
+                    if let Some(engine) = &self.0.playback {
+                        let _ = engine.resume();
+                    }
+                }
+            }
+            keyboard::Key::Named(keyboard::key::Named::ArrowLeft) => {
+                let new_pos = (self.0.position_secs - 5.0).max(0.0);
+                if let Some(engine) = &self.0.playback {
+                    let _ = engine.seek(new_pos);
+                }
+            }
+            keyboard::Key::Named(keyboard::key::Named::ArrowRight) => {
+                let new_pos = (self.0.position_secs + 5.0).min(self.0.duration_secs);
+                if let Some(engine) = &self.0.playback {
+                    let _ = engine.seek(new_pos);
+                }
+            }
+            keyboard::Key::Named(keyboard::key::Named::ArrowUp) => {
+                let new_vol = (self.0.volume + 0.05).clamp(0.0, 1.0);
+                if let Some(engine) = &self.0.playback {
+                    let _ = engine.set_volume(new_vol);
+                }
+                self.0.volume = new_vol;
+            }
+            keyboard::Key::Named(keyboard::key::Named::ArrowDown) => {
+                let new_vol = (self.0.volume - 0.05).clamp(0.0, 1.0);
+                if let Some(engine) = &self.0.playback {
+                    let _ = engine.set_volume(new_vol);
+                }
+                self.0.volume = new_vol;
+            }
+            keyboard::Key::Named(keyboard::key::Named::Escape) => {
+                if !self.0.search_query.is_empty() {
+                    self.0.search_query.clear();
+                    self.0.filtered_library = self.0.library.clone();
+                } else {
+                    self.0.active_view = View::NowPlaying;
+                }
+            }
+            keyboard::Key::Character(ref c) => match c.as_str() {
+                "n" => { self.play_next(); }
+                "p" => {
+                    if let Some(engine) = &self.0.playback {
+                        if let Some(prev) = self.0.queue.previous() {
+                            let _ = engine.play(prev.clone());
+                        }
+                    }
+                }
+                "s" => {
+                    self.0.shuffle_mode = match self.0.shuffle_mode {
+                        ShuffleMode::Off => ShuffleMode::Shuffle,
+                        ShuffleMode::Shuffle => ShuffleMode::SmartRadio,
+                        ShuffleMode::SmartRadio => ShuffleMode::Off,
+                    };
+                }
+                "r" => {
+                    self.0.repeat_mode = match self.0.repeat_mode {
+                        RepeatMode::Off => RepeatMode::All,
+                        RepeatMode::All => RepeatMode::One,
+                        RepeatMode::One => RepeatMode::Off,
+                    };
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+        Command::none()
+    }
+
+    /// Plays the next song based on queue, smart radio, or repeat mode.
+    fn play_next(&mut self) {
+        // Try queue first.
+        if let Some(next_song) = self.0.queue.next() {
+            if let Some(engine) = &self.0.playback {
+                let _ = engine.play(next_song);
+            }
+            return;
+        }
+
+        // Smart Radio: auto-fill from recommendations.
+        if self.0.shuffle_mode == ShuffleMode::SmartRadio && !self.0.recommendations.is_empty() {
+            let rec = self.0.recommendations.remove(0);
+            let song_info = record_to_song_info(&rec.record);
+            if let Some(engine) = &self.0.playback {
+                let _ = engine.play(song_info);
+            }
+            return;
+        }
+
+        // Shuffle: pick random from library.
+        if self.0.shuffle_mode == ShuffleMode::Shuffle && !self.0.library.is_empty() {
+            use rand::Rng;
+            let idx = rand::thread_rng().gen_range(0..self.0.library.len());
+            let record = self.0.library[idx].clone();
+            let song_info = record_to_song_info(&record);
+            if let Some(engine) = &self.0.playback {
+                let _ = engine.play(song_info);
+            }
+            return;
+        }
+
+        // Repeat All: restart from beginning of library.
+        if self.0.repeat_mode == RepeatMode::All && !self.0.library.is_empty() {
+            let record = self.0.library[0].clone();
+            let song_info = record_to_song_info(&record);
+            if let Some(engine) = &self.0.playback {
+                let _ = engine.play(song_info);
+            }
+        }
+    }
+
+    /// Saves current config to disk.
+    fn save_config(&self) {
+        let mut config = AppConfig::load();
+        config.music_folder = self.0.music_folder.clone();
+        config.volume = self.0.volume;
+        config.accent_color_hex = config::color_to_hex(self.0.art_tint);
+        config.library_view_mode = match self.0.library_view_mode {
+            LibraryViewMode::Grid => "grid".to_string(),
+            LibraryViewMode::List => "list".to_string(),
+        };
+        config.save();
     }
 }
 

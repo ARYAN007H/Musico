@@ -3,6 +3,7 @@ use iced::Color;
 use musico_playback::{PlaybackEngine, PlaybackStatus, SongInfo, PlaybackQueue};
 use musico_recommender::{MusicRecommender, SongRecord, RecommendedSong};
 use std::sync::{Arc, Mutex};
+use crate::config::AppConfig;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
@@ -18,9 +19,24 @@ pub enum LibraryViewMode {
     List,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShuffleMode {
+    Off,
+    Shuffle,
+    SmartRadio,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RepeatMode {
+    Off,
+    One,
+    All,
+}
+
 pub struct AppState {
     // Navigation
     pub active_view: View,
+    #[allow(dead_code)]
     pub sidebar_collapsed: bool,
     pub window_width: f32,
     pub window_height: f32,
@@ -32,7 +48,6 @@ pub struct AppState {
     pub duration_secs: f32,
     pub volume: f32,
     pub listened_secs: u32,
-    pub is_muted: bool,
 
     // Library
     pub library: Vec<SongRecord>,
@@ -43,6 +58,10 @@ pub struct AppState {
     // Queue & Recommendations
     pub queue: PlaybackQueue,
     pub recommendations: Vec<RecommendedSong>,
+
+    // Playback modes
+    pub shuffle_mode: ShuffleMode,
+    pub repeat_mode: RepeatMode,
 
     // Dynamic theming
     pub art_dominant_color: Option<Color>,
@@ -61,16 +80,12 @@ pub struct AppState {
 
 impl AppState {
     pub fn new() -> Self {
-        let music_folder = dirs::audio_dir();
+        let config = AppConfig::load();
 
-        let dummy_song = musico_playback::SongInfo {
-            id: "dummy".to_string(),
-            file_path: "/dummy".to_string(),
-            title: "Midnight City".to_string(),
-            artist: "M83".to_string(),
-            album: "Hurry Up, We're Dreaming".to_string(),
-            duration_secs: 243.0,
-            cover_art: None,
+        let library_view_mode = if config.library_view_mode == "list" {
+            LibraryViewMode::List
+        } else {
+            LibraryViewMode::Grid
         };
 
         Self {
@@ -79,26 +94,28 @@ impl AppState {
             window_width: 900.0,
             window_height: 600.0,
 
-            current_song: Some(dummy_song),
-            playback_status: PlaybackStatus::Playing,
-            position_secs: 65.0,
-            duration_secs: 243.0,
-            volume: 1.0,
+            current_song: None,
+            playback_status: PlaybackStatus::Stopped,
+            position_secs: 0.0,
+            duration_secs: 0.0,
+            volume: config.volume,
             listened_secs: 0,
-            is_muted: false,
 
             library: Vec::new(),
             filtered_library: Vec::new(),
             search_query: String::new(),
-            library_view_mode: LibraryViewMode::Grid,
+            library_view_mode,
 
             queue: PlaybackQueue::new(),
             recommendations: Vec::new(),
 
-            art_dominant_color: None,
-            art_tint: crate::theme::Palette::default_palette().accent,
+            shuffle_mode: ShuffleMode::Off,
+            repeat_mode: RepeatMode::Off,
 
-            music_folder,
+            art_dominant_color: None,
+            art_tint: config.accent_color(),
+
+            music_folder: config.music_folder,
             is_indexing: false,
             index_progress: (0, 0),
 

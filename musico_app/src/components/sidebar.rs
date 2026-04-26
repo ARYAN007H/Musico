@@ -2,10 +2,9 @@
 // Icons drawn as inline SVG paths. Active item has a left-edge accent bar.
 
 use iced::{
-    Alignment, Background, Border, Color, Element, Length,
+    Alignment, Background, Border, Element, Length,
     widget::{button, column, container, row, svg, text, vertical_space, Space},
 };
-use iced::widget::container::Appearance;
 
 use crate::{
     app::Message,

@@ -7,7 +7,7 @@
 //! ## Quick Start
 //!
 //! ```rust,no_run
-//! use musico::MusicRecommender;
+//! use musico_recommender::MusicRecommender;
 //!
 //! let mut engine = MusicRecommender::new("/tmp/musico_db").unwrap();
 //!

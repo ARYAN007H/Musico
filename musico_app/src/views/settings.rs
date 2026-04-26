@@ -5,7 +5,7 @@ use crate::theme::{self, Palette};
 
 pub fn settings<'a, Message: 'a + Clone>(
     state: &AppState,
-    on_change_folder: Message,
+    on_pick_folder: Message,
     on_scan: Message,
     on_set_accent: impl Fn(Color) -> Message + 'a,
 ) -> Element<'a, Message> {
@@ -37,7 +37,7 @@ pub fn settings<'a, Message: 'a + Clone>(
                 .style(iced::theme::Container::Custom(Box::new(InputBgStyle(p.surface)))),
             Space::with_width(12),
             button(text("Change Folder").style(p.text_primary))
-                .on_press(on_change_folder)
+                .on_press(on_pick_folder)
                 .padding([12, 20])
                 .style(iced::theme::Button::Custom(Box::new(PrimaryBtnStyle(p.elevated, p.highlight))))
         ].align_items(Alignment::Center)
@@ -65,6 +65,16 @@ pub fn settings<'a, Message: 'a + Clone>(
             ].align_items(Alignment::Center)
         );
     } else {
+        let lib_count = state.library.len();
+        if lib_count > 0 {
+            index_content = index_content.push(
+                text(format!("{} songs indexed", lib_count))
+                    .font(theme::FONT_TEXT)
+                    .size(theme::TEXT_CAPTION)
+                    .style(p.text_muted)
+            );
+            index_content = index_content.push(Space::with_height(8));
+        }
         index_content = index_content.push(
             button(text("Re-index Library").style(p.text_primary))
                 .on_press(on_scan)
@@ -89,7 +99,7 @@ pub fn settings<'a, Message: 'a + Clone>(
     let mut swatches = row![].spacing(12);
     for (hex, _name) in colors {
         let color = color_from_hex(hex);
-        let is_selected = state.art_tint == color;
+        let is_selected = color_approx_eq(state.art_tint, color);
         
         let swatch = button(Space::new(Length::Fixed(32.0), Length::Fixed(32.0)))
             .on_press(on_set_accent(color))
@@ -106,6 +116,21 @@ pub fn settings<'a, Message: 'a + Clone>(
 
     content = content.push(accent_section);
 
+    // Keyboard Shortcuts Section
+    let shortcuts_section = container(column![
+        text("Keyboard Shortcuts").font(theme::FONT_ROUNDED).size(theme::TEXT_TITLE).style(p.text_primary),
+        Space::with_height(16),
+        shortcut_row("Space", "Play / Pause", &p),
+        shortcut_row("← / →", "Seek ±5 seconds", &p),
+        shortcut_row("↑ / ↓", "Volume ±5%", &p),
+        shortcut_row("N / P", "Next / Previous", &p),
+        shortcut_row("S", "Cycle shuffle mode", &p),
+        shortcut_row("R", "Cycle repeat mode", &p),
+        shortcut_row("Esc", "Clear search / Now Playing", &p),
+    ]).padding(24).style(theme::glass_card).width(Length::Fill);
+
+    content = content.push(shortcuts_section);
+
     // About Section
     let about_section = container(column![
         text("About").font(theme::FONT_ROUNDED).size(theme::TEXT_TITLE).style(p.text_primary),
@@ -116,7 +141,23 @@ pub fn settings<'a, Message: 'a + Clone>(
 
     content = content.push(about_section);
 
-    container(content).width(Length::Fill).height(Length::Fill).into()
+    container(
+        iced::widget::scrollable(content)
+    ).width(Length::Fill).height(Length::Fill).into()
+}
+
+fn shortcut_row<'a, Message: 'a>(key: &str, desc: &str, p: &Palette) -> Element<'a, Message> {
+    row![
+        container(text(key).font(theme::FONT_ROUNDED).size(theme::TEXT_CAPTION).style(p.text_primary))
+            .padding([4, 10])
+            .style(iced::theme::Container::Custom(Box::new(InputBgStyle(p.surface)))),
+        Space::with_width(12),
+        text(desc).font(theme::FONT_TEXT).size(theme::TEXT_CAPTION).style(p.text_muted),
+    ]
+    .spacing(4)
+    .align_items(Alignment::Center)
+    .padding([4, 0])
+    .into()
 }
 
 fn color_from_hex(hex: &str) -> Color {
@@ -125,6 +166,10 @@ fn color_from_hex(hex: &str) -> Color {
     let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(0);
     let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(0);
     Color::from_rgb8(r, g, b)
+}
+
+fn color_approx_eq(a: Color, b: Color) -> bool {
+    (a.r - b.r).abs() < 0.02 && (a.g - b.g).abs() < 0.02 && (a.b - b.b).abs() < 0.02
 }
 
 struct InputBgStyle(Color);

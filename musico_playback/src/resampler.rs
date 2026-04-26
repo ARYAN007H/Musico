@@ -14,6 +14,8 @@ pub struct AudioResampler {
     input_sample_rate: u32,
     output_sample_rate: u32,
     channels: usize,
+    // Pre-allocated deinterleave buffers to avoid per-call allocation.
+    deinterleave_bufs: Vec<Vec<f64>>,
 }
 
 impl AudioResampler {
@@ -29,29 +31,49 @@ impl AudioResampler {
         let ratio = output_sr as f64 / input_sr as f64;
         let resampler = SincFixedIn::<f64>::new(ratio, 2.0, params, RESAMPLE_CHUNK_SIZE, channels)
             .map_err(|e| PlaybackError::ResamplerError(format!("{e}")))?;
-        Ok(Self { resampler, input_sample_rate: input_sr, output_sample_rate: output_sr, channels })
+
+        let deinterleave_bufs = vec![vec![0.0f64; RESAMPLE_CHUNK_SIZE]; channels];
+
+        Ok(Self {
+            resampler,
+            input_sample_rate: input_sr,
+            output_sample_rate: output_sr,
+            channels,
+            deinterleave_bufs,
+        })
     }
 
-    /// Resamples interleaved f32 samples. Deinterleaves, processes, reinterleaves.
-    pub fn process(&mut self, input: &[f32]) -> Result<Vec<f32>, PlaybackError> {
+    /// Resamples interleaved f32 samples into a caller-provided output buffer.
+    /// Zero heap allocations on the hot path (uses pre-allocated internal buffers).
+    pub fn process_into(&mut self, input: &[f32], output: &mut Vec<f32>) -> Result<(), PlaybackError> {
         let ch = self.channels;
         let frames_in = input.len() / ch;
-        if frames_in == 0 { return Ok(Vec::new()); }
+        if frames_in == 0 { return Ok(()); }
 
         let chunk = self.resampler.input_frames_next();
-        let mut out = Vec::new();
         let mut offset = 0;
 
         while offset < frames_in {
             let end = (offset + chunk).min(frames_in);
             let actual = end - offset;
-            let mut bufs: Vec<Vec<f64>> = vec![vec![0.0f64; chunk]; ch];
-            for f in 0..actual {
-                for c in 0..ch {
-                    bufs[c][f] = input[(offset + f) * ch + c] as f64;
+
+            // Reuse pre-allocated deinterleave buffers — just resize if needed.
+            for c in 0..ch {
+                let buf = &mut self.deinterleave_bufs[c];
+                if buf.len() < chunk {
+                    buf.resize(chunk, 0.0);
+                }
+                // Zero the buffer and fill with actual samples.
+                for i in 0..chunk {
+                    if i < actual {
+                        buf[i] = input[(offset + i) * ch + c] as f64;
+                    } else {
+                        buf[i] = 0.0;
+                    }
                 }
             }
-            let res = self.resampler.process(&bufs, None)
+
+            let res = self.resampler.process(&self.deinterleave_bufs, None)
                 .map_err(|e| PlaybackError::ResamplerError(format!("{e}")))?;
             let out_frames = if res.is_empty() { 0 } else { res[0].len() };
             let useful = if actual < chunk {
@@ -60,11 +82,11 @@ impl AudioResampler {
             } else { out_frames };
             let take = useful.min(out_frames);
             for f in 0..take {
-                for c in 0..ch { out.push(res[c][f] as f32); }
+                for c in 0..ch { output.push(res[c][f] as f32); }
             }
             offset += chunk;
         }
-        Ok(out)
+        Ok(())
     }
 
     /// Returns `true` if resampling is actually needed.

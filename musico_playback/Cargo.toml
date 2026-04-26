@@ -16,6 +16,7 @@ symphonia = { version = "0.5", features = ["all"] }
 rubato = "0.15"
 ringbuf = "0.3"
 crossbeam-channel = "0.5"
+rand = "0.8"
 serde = { version = "1", features = ["derive"] }
 thiserror = "1"
 log = "0.4"

@@ -164,6 +164,7 @@ fn grid_card<'a, Message: 'a + Clone>(
 
 // Custom Styles
 
+#[allow(dead_code)]
 struct SearchInputStyle(Color, Color, Color);
 impl iced::widget::text_input::StyleSheet for SearchInputStyle {
     type Style = iced::Theme;

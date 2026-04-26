@@ -62,6 +62,11 @@ impl PlaybackQueue {
         }
     }
 
+    /// Removes the song at the given index from the upcoming queue.
+    pub fn remove_at(&mut self, index: usize) -> Option<SongInfo> {
+        self.songs.remove(index)
+    }
+
     /// Clears both the queue and history.
     pub fn clear(&mut self) {
         self.songs.clear();
@@ -74,6 +79,11 @@ impl PlaybackQueue {
         &self.songs
     }
 
+    /// Returns an iterator over the upcoming songs.
+    pub fn iter(&self) -> impl Iterator<Item = &SongInfo> {
+        self.songs.iter()
+    }
+
     /// Returns `true` if the queue is empty.
     pub fn is_empty(&self) -> bool {
         self.songs.is_empty()
@@ -82,6 +92,15 @@ impl PlaybackQueue {
     /// Returns the number of songs in the queue.
     pub fn len(&self) -> usize {
         self.songs.len()
+    }
+
+    /// Shuffles the upcoming songs randomly while preserving history.
+    pub fn shuffle(&mut self) {
+        use rand::seq::SliceRandom;
+        let mut rng = rand::thread_rng();
+        let mut songs: Vec<SongInfo> = self.songs.drain(..).collect();
+        songs.shuffle(&mut rng);
+        self.songs = songs.into();
     }
 }
 

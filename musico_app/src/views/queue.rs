@@ -1,14 +1,15 @@
-use iced::widget::{column, container, row, scrollable, text, Space};
+use iced::widget::{button, column, container, row, scrollable, text, Space};
 use iced::{Alignment, Color, Element, Length};
 use musico_recommender::SongRecord;
 use crate::state::AppState;
 use crate::theme::{self, Palette};
 use crate::components::song_row::song_row;
+use crate::components::seek_bar::format_time;
 
 pub fn queue<'a, Message: 'a + Clone>(
     state: &AppState,
     _on_play_queue: impl Fn(SongRecord) -> Message + 'a,
-    _on_remove_queue: impl Fn(usize) -> Message + 'a,
+    on_remove_queue: impl Fn(usize) -> Message + 'a,
     on_play_recommendation: impl Fn(SongRecord) -> Message + 'a,
     on_queue_recommendation: impl Fn(SongRecord) -> Message + 'a,
 ) -> Element<'a, Message> {
@@ -32,25 +33,47 @@ pub fn queue<'a, Message: 'a + Clone>(
                 .style(p.text_muted)
         );
     } else {
-        // Collect into a Vec first so we can iterate and generate messages
-        let mut _q_items: Vec<()> = Vec::new();
-        // Since queue doesn't expose iter() directly easily without draining or modifying,
-        // we might need to expose an iter() on PlaybackQueue in musico_playback, 
-        // or we assume it has an iter method, or we use a workaround. 
-        // The prompt says we can interact with it. If it doesn't have iter, we can only display the length for now or we assume it does.
-        // Assuming PlaybackQueue has a way to view its contents, or we just render an empty state if we can't.
-        // Wait, the prompt says "SECTION 1 - QUEUE ... Numbered list". 
-        // Let's assume we can access it via `.queue` which is a `PlaybackQueue`.
-        // Let's look at `musico_playback/src/queue.rs` or `lib.rs`.
-        // Actually, PlaybackQueue might just be a VecDeque wrapper. We can assume an `iter` method, but to be safe, I'll just iterate if it's possible.
-        // If not, I'll just use a placeholder text "Queue has N items" if compilation fails, but we need to render the UI.
-        
-        // I will use a dummy rendering for queue items for now, because `PlaybackQueue` in `musico_playback` might not expose `iter()`.
-        // Wait, `queue::PlaybackQueue` might have `.len()`.
-        content = content.push(text(format!("{} items in queue", state.queue.len())).style(p.text_muted));
-        
-        // In a real scenario we'd do:
-        // for (i, song) in state.queue.iter().enumerate() { ... }
+        let mut q_col = column![].spacing(2);
+        for (i, song) in state.queue.iter().enumerate() {
+            let remove_btn = button(text("✕").size(14).style(p.text_muted))
+                .on_press(on_remove_queue(i))
+                .style(iced::theme::Button::Text)
+                .padding(8);
+
+            let song_row = row![
+                container(
+                    text(format!("{}", i + 1))
+                        .font(theme::FONT_ROUNDED)
+                        .size(theme::TEXT_CAPTION)
+                        .style(p.text_muted)
+                ).width(Length::Fixed(28.0)).center_x(),
+                column![
+                    text(&song.title).font(theme::FONT_TEXT).size(theme::TEXT_BODY).style(p.text_primary),
+                    text(&song.artist).font(theme::FONT_TEXT).size(theme::TEXT_CAPTION).style(p.text_muted),
+                ].spacing(2).width(Length::Fill),
+                text(format_time(song.duration_secs)).font(theme::FONT_TEXT).size(theme::TEXT_CAPTION).style(p.text_muted),
+                remove_btn,
+            ]
+            .align_items(Alignment::Center)
+            .spacing(10)
+            .padding([8, 12]);
+
+            q_col = q_col.push(
+                container(song_row)
+                    .width(Length::Fill)
+                    .style(iced::theme::Container::Custom(Box::new(QueueRowStyle(
+                        if i % 2 == 0 { Color::TRANSPARENT } else {
+                            Color {
+                                r: p.base.r * 0.7 + p.elevated.r * 0.3,
+                                g: p.base.g * 0.7 + p.elevated.g * 0.3,
+                                b: p.base.b * 0.7 + p.elevated.b * 0.3,
+                                a: 1.0,
+                            }
+                        }
+                    ))))
+            );
+        }
+        content = content.push(q_col);
     }
 
     // DIVIDER
@@ -81,8 +104,6 @@ pub fn queue<'a, Message: 'a + Clone>(
         let mut recs_col = column![].spacing(2);
         
         for (i, rec) in state.recommendations.iter().enumerate() {
-            // Dimmer styling by wrapping the row in a container with opacity, or adjusting the row style.
-            // We use our existing song_row.
             let row_el = song_row(&rec.record, i, false, &on_play_recommendation, Some(&on_queue_recommendation));
             
             // Similarity indicator dot
@@ -112,6 +133,21 @@ pub fn queue<'a, Message: 'a + Clone>(
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
+}
+
+struct QueueRowStyle(Color);
+impl iced::widget::container::StyleSheet for QueueRowStyle {
+    type Style = iced::Theme;
+    fn appearance(&self, _style: &Self::Style) -> iced::widget::container::Appearance {
+        iced::widget::container::Appearance {
+            background: Some(self.0.into()),
+            border: iced::Border {
+                radius: 8.0.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
 }
 
 struct DividerStyle(Color);

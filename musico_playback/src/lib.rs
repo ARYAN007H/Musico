@@ -311,6 +311,10 @@ fn play_song(
         None
     };
 
+    // Pre-allocate reusable buffers for the hot path (zero heap allocation per packet).
+    let mut process_buf: Vec<f32> = Vec::with_capacity(8192);
+    let mut channel_buf: Vec<f32> = Vec::with_capacity(8192);
+
     // Set state to buffering.
     {
         let mut st = state.lock().unwrap_or_else(|e| e.into_inner());
@@ -329,8 +333,11 @@ fn play_song(
     while filled < prefill_samples {
         match dec.decode_next_packet() {
             Ok(Some(samples)) => {
-                let processed = process_samples(&samples, &mut resampler_opt, source_ch, device_ch);
-                let pushed = push_samples(audio_output.producer(), &processed);
+                process_samples_reuse(
+                    &samples, &mut resampler_opt, source_ch, device_ch,
+                    &mut process_buf, &mut channel_buf,
+                );
+                let pushed = push_samples(audio_output.producer(), &process_buf);
                 filled += pushed;
             }
             Ok(None) => break,
@@ -420,6 +427,8 @@ fn play_song(
                 PlaybackCommand::Play(new_song) => {
                     accumulate_listen(state);
                     set_stopped(state);
+                    // Flush ring buffer so new song starts clean.
+                    audio_output.request_flush();
                     play_song(new_song, cmd_rx, event_tx, state, audio_output, device_sr, device_ch);
                     return;
                 }
@@ -427,8 +436,8 @@ fn play_song(
                     if let Err(e) = dec.seek_to(secs) {
                         let _ = event_tx.send(PlaybackEvent::Error(format!("{e}")));
                     } else {
-                        // Flush the ring buffer by consuming all remaining.
-                        flush_producer(audio_output.producer());
+                        // Request the CPAL callback to discard all stale samples.
+                        audio_output.request_flush();
                         decoded_frames = (secs * source_sr as f32) as u64;
                         {
                             let mut st = state.lock().unwrap_or_else(|e| e.into_inner());
@@ -464,10 +473,13 @@ fn play_song(
         match dec.decode_next_packet() {
             Ok(Some(samples)) => {
                 let frame_count = samples.len() / source_ch;
-                let processed = process_samples(&samples, &mut resampler_opt, source_ch, device_ch);
+                process_samples_reuse(
+                    &samples, &mut resampler_opt, source_ch, device_ch,
+                    &mut process_buf, &mut channel_buf,
+                );
 
                 // Push to ring buffer, spin-waiting if full.
-                push_samples_blocking(audio_output.producer(), &processed);
+                push_samples_blocking(audio_output.producer(), &process_buf);
 
                 decoded_frames += frame_count as u64;
                 let pos = decoded_frames as f32 / source_sr as f32;
@@ -517,36 +529,51 @@ fn play_song(
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/// Process raw decoded samples: resample if needed, channel-adapt if needed.
-fn process_samples(
+/// Process raw decoded samples using pre-allocated buffers: resample if needed,
+/// channel-adapt if needed. Returns a reference to the output buffer.
+/// Reuses Vec capacity across calls — no heap allocations on the hot path.
+fn process_samples_reuse(
     samples: &[f32],
     resampler: &mut Option<resampler::AudioResampler>,
     source_ch: usize,
     device_ch: usize,
-) -> Vec<f32> {
-    let resampled = match resampler {
-        Some(r) if r.needed() => match r.process(samples) {
-            Ok(s) => s,
-            Err(e) => {
-                log::warn!("Resampler error: {e}");
-                samples.to_vec()
+    process_buf: &mut Vec<f32>,
+    channel_buf: &mut Vec<f32>,
+) {
+    // Step 1: Resample if needed, result goes into process_buf.
+    process_buf.clear();
+    let resampled: &[f32] = match resampler {
+        Some(r) if r.needed() => {
+            match r.process_into(samples, process_buf) {
+                Ok(()) => {},
+                Err(e) => {
+                    log::warn!("Resampler error: {e}");
+                    process_buf.extend_from_slice(samples);
+                }
             }
-        },
-        _ => samples.to_vec(),
+            process_buf.as_slice()
+        }
+        _ => samples,
     };
 
-    // Channel adaptation.
-    if source_ch == device_ch {
-        resampled
-    } else {
-        adapt_channels(&resampled, source_ch, device_ch)
+    // Step 2: Channel adaptation into channel_buf (if needed).
+    if source_ch != device_ch {
+        adapt_channels_reuse(resampled, source_ch, device_ch, channel_buf);
+        // Swap so process_buf holds the final result.
+        std::mem::swap(process_buf, channel_buf);
+    } else if resampled.as_ptr() != process_buf.as_ptr() {
+        // No resample happened — copy samples into process_buf.
+        process_buf.extend_from_slice(samples);
     }
+    // Final result is always in process_buf.
 }
 
-/// Simple channel adaptation (mono→stereo, stereo→mono, etc).
-fn adapt_channels(samples: &[f32], from_ch: usize, to_ch: usize) -> Vec<f32> {
+/// Simple channel adaptation (mono→stereo, stereo→mono, etc) into a
+/// pre-allocated buffer.
+fn adapt_channels_reuse(samples: &[f32], from_ch: usize, to_ch: usize, out: &mut Vec<f32>) {
     let frames = samples.len() / from_ch;
-    let mut out = Vec::with_capacity(frames * to_ch);
+    out.clear();
+    out.reserve(frames * to_ch);
     for f in 0..frames {
         let base = f * from_ch;
         for c in 0..to_ch {
@@ -558,7 +585,6 @@ fn adapt_channels(samples: &[f32], from_ch: usize, to_ch: usize) -> Vec<f32> {
             }
         }
     }
-    out
 }
 
 /// Pushes as many samples as will fit, returns count pushed.
@@ -576,14 +602,6 @@ fn push_samples_blocking(producer: &mut ringbuf::HeapProducer<f32>, samples: &[f
             thread::sleep(Duration::from_micros(500));
         }
     }
-}
-
-/// Flush the ring buffer by reading/discarding. Since we only have the producer,
-/// we can't pop. Instead we just note this is a no-op on the producer side —
-/// the consumer will naturally drain.
-fn flush_producer(_producer: &mut ringbuf::HeapProducer<f32>) {
-    // The consumer (CPAL callback) will drain any stale samples.
-    // We just need to stop pushing until the seek re-fill starts.
 }
 
 /// Accumulates elapsed playing time into `listened_secs` and clears `listen_start`.

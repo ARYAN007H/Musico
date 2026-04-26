@@ -6,7 +6,7 @@
 use crate::error::PlaybackError;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use ringbuf::{HeapConsumer, HeapProducer, HeapRb};
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 
 /// Manages the CPAL output stream and the producer half of the ring buffer.
@@ -25,7 +25,10 @@ pub struct AudioOutput {
     /// reads this without locking.
     volume: Arc<AtomicU32>,
     /// Shared mute flag.
-    muted: Arc<std::sync::atomic::AtomicBool>,
+    muted: Arc<AtomicBool>,
+    /// Shared flush flag — when set, the CPAL callback discards all buffered
+    /// samples and clears the flag. Used for instant seek.
+    flush_requested: Arc<AtomicBool>,
 }
 
 impl AudioOutput {
@@ -76,12 +79,14 @@ impl AudioOutput {
         let (producer, consumer) = rb.split();
 
         let volume = Arc::new(AtomicU32::new(f32::to_bits(1.0)));
-        let muted = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let muted = Arc::new(AtomicBool::new(false));
+        let flush_requested = Arc::new(AtomicBool::new(false));
 
         let vol_clone = Arc::clone(&volume);
         let muted_clone = Arc::clone(&muted);
+        let flush_clone = Arc::clone(&flush_requested);
 
-        let stream = Self::build_stream(&device, &config.into(), consumer, vol_clone, muted_clone)?;
+        let stream = Self::build_stream(&device, &config.into(), consumer, vol_clone, muted_clone, flush_clone)?;
         stream.play().map_err(|e| PlaybackError::StreamBuild(format!("{e}")))?;
 
         Ok(Self {
@@ -91,6 +96,7 @@ impl AudioOutput {
             channels,
             volume,
             muted,
+            flush_requested,
         })
     }
 
@@ -119,17 +125,32 @@ impl AudioOutput {
         self.muted.store(m, Ordering::Relaxed);
     }
 
+    /// Requests a flush of the ring buffer. The CPAL callback will discard
+    /// all buffered samples on its next invocation.
+    pub fn request_flush(&self) {
+        self.flush_requested.store(true, Ordering::Release);
+    }
+
     fn build_stream(
         device: &cpal::Device,
         config: &cpal::StreamConfig,
         mut consumer: HeapConsumer<f32>,
         volume: Arc<AtomicU32>,
-        muted: Arc<std::sync::atomic::AtomicBool>,
+        muted: Arc<AtomicBool>,
+        flush_requested: Arc<AtomicBool>,
     ) -> Result<cpal::Stream, PlaybackError> {
         let stream = device
             .build_output_stream(
                 config,
                 move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                    // If a flush was requested (seek), drain all stale samples.
+                    if flush_requested.compare_exchange(
+                        true, false, Ordering::AcqRel, Ordering::Relaxed
+                    ).is_ok() {
+                        // Discard everything in the ring buffer.
+                        while consumer.pop().is_some() {}
+                    }
+
                     let vol = if muted.load(Ordering::Relaxed) {
                         0.0
                     } else {
