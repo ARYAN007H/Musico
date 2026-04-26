@@ -117,10 +117,11 @@ impl<'a, Message> Program<Message> for SeekBar<'a, Message> {
                 Point::new(0.0, y_center),
                 Point::new(bounds.width, y_center),
             );
+            let track_bg_color = iced::Color::from_rgb8(0x1e, 0x20, 0x33);
             frame.stroke(
                 &track_bg,
                 Stroke::default()
-                    .with_color(p.border_subtle)
+                    .with_color(track_bg_color)
                     .with_width(track_height),
             );
 
@@ -153,12 +154,13 @@ impl<'a, Message> Program<Message> for SeekBar<'a, Message> {
                     .with_width(track_height),
             );
 
-            // Draw thumb if hovering or dragging
-            if state.hover_x.is_some() || state.is_dragging {
-                let thumb_radius = 7.0;
-                let thumb_path = Path::circle(Point::new(fill_width, y_center), thumb_radius);
-                frame.fill(&thumb_path, p.accent);
-            }
+            // Always draw thumb but make it more prominent when hovering
+            let is_active = state.hover_x.is_some() || state.is_dragging;
+            let thumb_radius = if is_active { 5.5 } else { 4.0 };
+            
+            let thumb_path = Path::circle(Point::new(fill_width, y_center), thumb_radius);
+            frame.fill(&thumb_path, iced::Color::WHITE);
+            frame.stroke(&thumb_path, Stroke::default().with_color(p.accent).with_width(2.0));
         });
 
         vec![geometry]

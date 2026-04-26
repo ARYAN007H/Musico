@@ -13,24 +13,23 @@ use crate::{
     theme::{self, *},
 };
 
-// ─── Icon SVG handles (embed at compile time) ─────────────────────────────────
-// Place these SVG files in musico_app/assets/icons/
-// Each is a 20x20 single-path icon.
+use crate::icons;
 
 fn icon_now_playing() -> svg::Handle {
-    svg::Handle::from_memory(include_bytes!("../../assets/icons/disc.svg").as_slice())
+    svg::Handle::from_memory(icons::NOW_PLAYING)
 }
 fn icon_library() -> svg::Handle {
-    svg::Handle::from_memory(include_bytes!("../../assets/icons/library.svg").as_slice())
+    svg::Handle::from_memory(icons::LIBRARY)
 }
 fn icon_queue() -> svg::Handle {
-    svg::Handle::from_memory(include_bytes!("../../assets/icons/queue.svg").as_slice())
+    svg::Handle::from_memory(icons::QUEUE)
 }
 fn icon_settings() -> svg::Handle {
-    svg::Handle::from_memory(include_bytes!("../../assets/icons/settings.svg").as_slice())
+    svg::Handle::from_memory(icons::SETTINGS)
 }
 fn icon_musico() -> svg::Handle {
-    svg::Handle::from_memory(include_bytes!("../../assets/icons/musico_logo.svg").as_slice())
+    // We can use a generic music note or logo for this. Let's use NOW_PLAYING for now.
+    svg::Handle::from_memory(icons::NOW_PLAYING)
 }
 
 // ─── Nav item component ───────────────────────────────────────────────────────
@@ -43,39 +42,21 @@ fn nav_item<'a>(
 ) -> Element<'a, Message> {
     let is_active = current == target;
 
-    // Left accent bar (3px wide purple line on active)
-    let accent_bar = container(Space::new(Length::Fixed(3.0), Length::Fixed(18.0)))
-        .style(move |_theme: &iced::Theme| {
-            container::Appearance {
-                background: if is_active {
-                    Some(Background::Color(ACCENT_PURPLE))
-                } else {
-                    None
-                },
-                border: Border {
-                    radius: [0.0, 3.0, 3.0, 0.0].into(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            }
-        });
-
-    // Icon tinted based on active state
     let icon_widget = svg(icon)
         .width(Length::Fixed(16.0))
         .height(Length::Fixed(16.0))
         .style(iced::theme::Svg::Custom(Box::new(theme::SvgStyle(
-            if is_active { ACCENT_PURPLE } else { TEXT_SECONDARY }
+            if is_active { BASE } else { TEXT_SECONDARY }
         ))));
 
     let label_widget = text(label)
         .size(SIZE_LABEL)
-        .style(if is_active { TEXT_PRIMARY } else { TEXT_SECONDARY });
+        .style(if is_active { BASE } else { TEXT_SECONDARY });
 
     let inner = row![icon_widget, label_widget]
-        .spacing(10)
+        .spacing(12)
         .align_items(Alignment::Center)
-        .padding([9, 12, 9, 12])
+        .padding([12, 16])
         .width(Length::Fill);
 
     let btn = button(inner)
@@ -83,13 +64,7 @@ fn nav_item<'a>(
         .style(iced::theme::Button::Custom(Box::new(NavButton { is_active })))
         .width(Length::Fill);
 
-    // Wrap in a row so the accent bar sits flush-left outside the button radius
-    row![
-        accent_bar,
-        container(btn).padding([0, 4]).width(Length::Fill),
-    ]
-    .align_items(Alignment::Center)
-    .into()
+    container(btn).padding([0, 8]).width(Length::Fill).into()
 }
 
 // ─── Now-playing mini card (bottom of sidebar above settings) ─────────────────
@@ -238,7 +213,7 @@ pub fn sidebar<'a>(state: &'a AppState) -> Element<'a, Message> {
         ]
         .height(Length::Fill),
     )
-    .style(theme::sidebar_container)
+    .style(theme::floating_panel)
     .width(Length::Fixed(SIDEBAR_WIDTH))
     .height(Length::Fill)
     .into()

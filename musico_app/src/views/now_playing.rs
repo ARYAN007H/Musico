@@ -6,6 +6,16 @@ use crate::components::seek_bar::{seek_bar, format_time};
 use crate::components::art_canvas::art_canvas;
 use crate::components::song_row::song_row;
 use musico_recommender::SongRecord;
+use crate::icons;
+use iced::widget::svg;
+
+fn svg_icon<'a, Message: 'a + Clone>(bytes: &'static [u8], size: u16, color: iced::Color) -> Element<'a, Message> {
+    svg(svg::Handle::from_memory(bytes))
+        .width(Length::Fixed(size as f32))
+        .height(Length::Fixed(size as f32))
+        .style(iced::theme::Svg::Custom(Box::new(crate::theme::SvgStyle(color))))
+        .into()
+}
 
 pub fn now_playing<'a, Message: 'a + Clone>(
     state: &AppState,
@@ -22,15 +32,15 @@ pub fn now_playing<'a, Message: 'a + Clone>(
     // We achieve this with a container style.
     
     // Album Art
-    let art_size = 152.0;
+    let art_size = 280.0;
     
     // In a real implementation we would have the image handle in state.
     // For now we pass None to render the colored rectangle fallback.
-    let art = art_canvas(None, art_size, theme::RADIUS_LG, state.art_tint);
+    let art = art_canvas(None, art_size, 24.0, state.art_tint);
     
     // Soft glow ring can be approximated by wrapping art in a container with padding and background
     let art_container = container(art)
-        .padding(4)
+        .padding(8)
         .style(iced::theme::Container::Custom(Box::new(GlowStyle(state.art_tint))));
 
     let mut content = column![].align_items(Alignment::Center).spacing(20);
@@ -41,18 +51,22 @@ pub fn now_playing<'a, Message: 'a + Clone>(
     };
 
     let title_col = column![
-        text(title_text).font(theme::FONT_DISPLAY).size(17.0).style(p.text_primary),
-        text(artist_text).font(theme::FONT_TEXT).size(13.0).style(p.text_muted)
-    ].spacing(3);
+        text(title_text).font(theme::FONT_DISPLAY).size(28.0).style(p.text_primary),
+        text(artist_text).font(theme::FONT_TEXT).size(16.0).style(p.text_muted)
+    ].spacing(6).align_items(Alignment::Center);
 
     let actions_row = row![
-        button(text("♡").size(16.0).style(p.text_muted)).style(iced::theme::Button::Text),
-        button(text("⋮").size(16.0).style(p.text_muted)).style(iced::theme::Button::Text),
-    ].spacing(8);
+        button(svg_icon(icons::HEART, 20, p.text_muted)).style(iced::theme::Button::Custom(Box::new(theme::TransportButton))).padding(12),
+        button(svg_icon(icons::MORE, 20, p.text_muted)).style(iced::theme::Button::Custom(Box::new(theme::TransportButton))).padding(12),
+    ].spacing(12);
 
-    let meta_row = row![title_col, Space::with_width(Length::Fill), actions_row]
-        .width(Length::Fill)
-        .align_items(Alignment::Center);
+    let meta_row = column![
+        title_col,
+        Space::with_height(16),
+        actions_row
+    ]
+    .width(Length::Fill)
+    .align_items(Alignment::Center);
 
     let seek_container = column![
         seek_bar(state.position_secs, state.duration_secs, on_seek),
@@ -66,15 +80,15 @@ pub fn now_playing<'a, Message: 'a + Clone>(
     let is_playing = matches!(state.playback_status, musico_playback::PlaybackStatus::Playing);
     
     let controls = row![
-        button(text("🔀").size(20).style(p.text_secondary)).style(iced::theme::Button::Text),
-        Space::with_width(20),
-        button(text("⏮").size(24).style(p.text_primary)).on_press(on_previous.clone()).style(iced::theme::Button::Text),
-        Space::with_width(20),
+        button(svg_icon(icons::SHUFFLE, 20, p.text_secondary)).style(iced::theme::Button::Custom(Box::new(theme::TransportButton))).padding(12),
+        Space::with_width(32),
+        button(svg_icon(icons::PREV, 26, p.text_primary)).on_press(on_previous.clone()).style(iced::theme::Button::Custom(Box::new(theme::TransportButton))).padding(12),
+        Space::with_width(32),
         play_button(is_playing, state.art_tint, on_toggle_play.clone()),
-        Space::with_width(20),
-        button(text("⏭").size(24).style(p.text_primary)).on_press(on_next.clone()).style(iced::theme::Button::Text),
-        Space::with_width(20),
-        button(text("🔁").size(20).style(p.text_secondary)).style(iced::theme::Button::Text),
+        Space::with_width(32),
+        button(svg_icon(icons::NEXT, 26, p.text_primary)).on_press(on_next.clone()).style(iced::theme::Button::Custom(Box::new(theme::TransportButton))).padding(12),
+        Space::with_width(32),
+        button(svg_icon(icons::REPEAT, 20, p.text_secondary)).style(iced::theme::Button::Custom(Box::new(theme::TransportButton))).padding(12),
     ].align_items(Alignment::Center);
 
     content = content.push(art_container)
@@ -107,6 +121,7 @@ pub fn now_playing<'a, Message: 'a + Clone>(
     let scrollable_content = scrollable(
         container(content)
             .width(Length::Fill)
+            .max_width(700.0)
             .padding(40)
             .center_x()
     );
@@ -114,6 +129,7 @@ pub fn now_playing<'a, Message: 'a + Clone>(
     container(scrollable_content)
         .width(Length::Fill)
         .height(Length::Fill)
+        .center_x()
         .style(iced::theme::Container::Custom(Box::new(NowPlayingBgStyle(state.art_tint, p.base))))
         .into()
 }
@@ -123,12 +139,12 @@ fn play_button<'a, Message: 'a + Clone>(
     accent: iced::Color,
     on_press: Message,
 ) -> Element<'a, Message> {
-    let icon = if is_playing { "⏸" } else { "▶" };
+    let icon = if is_playing { icons::PAUSE } else { icons::PLAY };
     
     button(
-        container(text(icon).size(20).style(Color::WHITE))
-            .width(Length::Fixed(50.0))
-            .height(Length::Fixed(50.0))
+        container(svg_icon(icon, 28, Color::WHITE))
+            .width(Length::Fixed(72.0))
+            .height(Length::Fixed(72.0))
             .center_x()
             .center_y()
     )
@@ -142,9 +158,9 @@ impl iced::widget::container::StyleSheet for GlowStyle {
     type Style = iced::Theme;
     fn appearance(&self, _style: &Self::Style) -> iced::widget::container::Appearance {
         iced::widget::container::Appearance {
-            background: Some(iced::Color { a: 0.15, ..self.0 }.into()),
+            background: Some(iced::Color { a: 0.25, ..self.0 }.into()),
             border: iced::Border {
-                radius: (theme::RADIUS_LG + 4.0).into(),
+                radius: (24.0 + 8.0).into(),
                 ..Default::default()
             },
             ..Default::default()
@@ -173,7 +189,7 @@ impl iced::widget::button::StyleSheet for PlayButtonStyle {
             border: iced::Border {
                 color: iced::Color::TRANSPARENT,
                 width: 0.0,
-                radius: 15.0.into(),
+                radius: 36.0.into(),
             },
             ..Default::default()
         }
@@ -191,7 +207,7 @@ impl iced::widget::button::StyleSheet for PlayButtonStyle {
             border: iced::Border {
                 color: iced::Color::TRANSPARENT,
                 width: 0.0,
-                radius: 15.0.into(),
+                radius: 36.0.into(),
             },
             ..Default::default()
         }
@@ -203,7 +219,7 @@ impl iced::widget::button::StyleSheet for PlayButtonStyle {
             border: iced::Border {
                 color: iced::Color::TRANSPARENT,
                 width: 0.0,
-                radius: 15.0.into(),
+                radius: 36.0.into(),
             },
             ..Default::default()
         }
@@ -214,10 +230,6 @@ struct NowPlayingBgStyle(iced::Color, iced::Color);
 impl iced::widget::container::StyleSheet for NowPlayingBgStyle {
     type Style = iced::Theme;
     fn appearance(&self, _style: &Self::Style) -> iced::widget::container::Appearance {
-        // We'll simulate a radial gradient or top-down gradient tint by just tinting the top area
-        // In Iced 0.12, complex gradients might be tricky without iced_aw, so we use a solid tint
-        // layered over the base, or simply an interpolated color.
-        
         let mix_factor = 0.05; // 5% tint over base
         let r = self.1.r * (1.0 - mix_factor) + self.0.r * mix_factor;
         let g = self.1.g * (1.0 - mix_factor) + self.0.g * mix_factor;
@@ -225,6 +237,16 @@ impl iced::widget::container::StyleSheet for NowPlayingBgStyle {
         
         iced::widget::container::Appearance {
             background: Some(iced::Color::from_rgb(r, g, b).into()),
+            border: iced::Border {
+                color: theme::BORDER_SUBTLE,
+                width: 1.0,
+                radius: 24.0.into(),
+            },
+            shadow: iced::Shadow {
+                color: iced::Color { a: 0.3, ..theme::BASE },
+                offset: iced::Vector { x: 0.0, y: 10.0 },
+                blur_radius: 30.0,
+            },
             ..Default::default()
         }
     }

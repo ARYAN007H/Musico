@@ -8,10 +8,10 @@ use iced::{
 
 // ─── Color Palette ──────────────────────────────────────────────────────────
 
-pub const BASE:      Color = Color::from_rgb(0.024, 0.027, 0.051); // #06070d
-pub const SURFACE:   Color = Color::from_rgb(0.051, 0.055, 0.078); // #0d0e14
-pub const ELEVATED:  Color = Color::from_rgb(0.059, 0.063, 0.098); // #0f1019
-pub const HIGHLIGHT: Color = Color::from_rgb(0.102, 0.106, 0.180); // #1a1b2e
+pub const BASE:      Color = Color::from_rgb(0.016, 0.018, 0.035); // #040409
+pub const SURFACE:   Color = Color::from_rgb(0.055, 0.059, 0.086); // #0e0f16
+pub const ELEVATED:  Color = Color::from_rgb(0.086, 0.090, 0.129); // #161721
+pub const HIGHLIGHT: Color = Color::from_rgb(0.125, 0.133, 0.200); // #202233
 
 pub const BORDER_SUBTLE: Color = Color::from_rgb(0.118, 0.125, 0.200); // #1e2033
 pub const BORDER_ACCENT: Color = Color::from_rgb(0.145, 0.149, 0.251); // #252640
@@ -114,6 +114,35 @@ pub fn base_container(_theme: &iced::Theme) -> container::Appearance {
     }
 }
 
+pub fn floating_panel(_theme: &iced::Theme) -> container::Appearance {
+    container::Appearance {
+        background: Some(Background::Color(SURFACE)),
+        border: Border {
+            color: BORDER_SUBTLE,
+            width: 1.0,
+            radius: 24.0.into(),
+        },
+        shadow: Shadow {
+            color: Color { a: 0.3, ..BASE },
+            offset: iced::Vector { x: 0.0, y: 10.0 },
+            blur_radius: 30.0,
+        },
+        ..Default::default()
+    }
+}
+
+pub fn glass_card(_theme: &iced::Theme) -> container::Appearance {
+    container::Appearance {
+        background: Some(Background::Color(Color { a: 0.6, ..ELEVATED })),
+        border: Border {
+            color: BORDER_SUBTLE,
+            width: 1.0,
+            radius: RADIUS_LG.into(),
+        },
+        ..Default::default()
+    }
+}
+
 pub fn elevated_card(_theme: &iced::Theme) -> container::Appearance {
     container::Appearance {
         background: Some(Background::Color(ELEVATED)),
@@ -191,13 +220,13 @@ impl button::StyleSheet for NavButton {
     fn active(&self, _style: &Self::Style) -> button::Appearance {
         button::Appearance {
             background: if self.is_active {
-                Some(Background::Color(HIGHLIGHT))
+                Some(Background::Color(ACCENT_PURPLE))
             } else {
                 None
             },
-            text_color: if self.is_active { TEXT_PRIMARY } else { TEXT_SECONDARY },
+            text_color: if self.is_active { BASE } else { TEXT_SECONDARY },
             border: Border {
-                radius: RADIUS_MD.into(),
+                radius: 50.0.into(),
                 ..Default::default()
             },
             ..Default::default()
@@ -206,10 +235,10 @@ impl button::StyleSheet for NavButton {
 
     fn hovered(&self, _style: &Self::Style) -> button::Appearance {
         button::Appearance {
-            background: Some(Background::Color(if self.is_active { HIGHLIGHT } else { ELEVATED })),
-            text_color: TEXT_PRIMARY,
+            background: Some(Background::Color(if self.is_active { ACCENT_PURPLE } else { ELEVATED })),
+            text_color: if self.is_active { BASE } else { TEXT_PRIMARY },
             border: Border {
-                radius: RADIUS_MD.into(),
+                radius: 50.0.into(),
                 ..Default::default()
             },
             ..Default::default()

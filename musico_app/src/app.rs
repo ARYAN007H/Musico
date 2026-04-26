@@ -118,8 +118,10 @@ impl Application for Musico {
                 let rec_clone = rec.clone();
                 return Command::perform(
                     async move {
-                        let guard = rec_clone.lock().unwrap();
-                        guard.get_all_songs().unwrap_or_default()
+                        tokio::task::spawn_blocking(move || {
+                            let guard = rec_clone.lock().unwrap();
+                            guard.get_all_songs().unwrap_or_default()
+                        }).await.unwrap_or_default()
                     },
                     Message::LoadAllSongs,
                 );
@@ -136,19 +138,19 @@ impl Application for Musico {
                     let song_info = record_to_song_info(&record);
                     let _ = engine.play(song_info);
                     
-                    // We might want to notify recommender here, or wait for Playing event.
-                    // The prompt specifies we wait for Playing event to extract art, 
-                    // but on_song_changed for recommender can be called here or on Playing.
-                    // We will call on_song_changed.
                     if let Some(rec) = &self.0.recommender {
-                        let mut guard: std::sync::MutexGuard<'_, MusicRecommender> = rec.lock().unwrap();
-                        let _ = guard.on_song_changed(&record.id);
-                        
-                        // Update recommendations
+                        let rec_clone = rec.clone();
                         let current_id = record.id.clone();
-                        if let Ok(recs) = guard.get_recommendations(&current_id, 10) {
-                            return Command::perform(async { recs }, Message::RecommendationsUpdated);
-                        }
+                        return Command::perform(
+                            async move {
+                                tokio::task::spawn_blocking(move || {
+                                    let mut guard = rec_clone.lock().unwrap();
+                                    let _ = guard.on_song_changed(&current_id);
+                                    guard.get_recommendations(&current_id, 10).unwrap_or_default()
+                                }).await.unwrap_or_default()
+                            },
+                            Message::RecommendationsUpdated,
+                        );
                     }
                 }
             }
@@ -391,6 +393,7 @@ impl Application for Musico {
         container(content)
             .width(Length::Fill)
             .height(Length::Fill)
+            .padding(16)
             .style(iced::theme::Container::Custom(Box::new(BaseContainerStyle)))
             .into()
     }
@@ -450,14 +453,14 @@ impl Musico {
         let sidebar = sidebar(&self.0);
         let main = self.main_content();
         
-        row![sidebar, main].into()
+        row![sidebar, main].spacing(16).into()
     }
 
     fn view_standard(&self) -> Element<'_, Message> {
         let sidebar = sidebar(&self.0);
         let main = self.main_content();
         
-        row![sidebar, main].into()
+        row![sidebar, main].spacing(16).into()
     }
 
     fn view_wide(&self) -> Element<'_, Message> {
@@ -478,10 +481,10 @@ impl Musico {
             row![
                 container(self.main_content()).width(Length::Fill),
                 container(q_panel).width(Length::Fixed(280.0)).style(iced::theme::Container::Custom(Box::new(QueuePanelStyle)))
-            ].into()
+            ].spacing(16).into()
         };
 
-        row![sidebar, main].into()
+        row![sidebar, main].spacing(16).into()
     }
 }
 
@@ -501,13 +504,17 @@ struct QueuePanelStyle;
 impl iced::widget::container::StyleSheet for QueuePanelStyle {
     type Style = iced::Theme;
     fn appearance(&self, _style: &Self::Style) -> iced::widget::container::Appearance {
-        let p = Palette::default_palette();
         iced::widget::container::Appearance {
-            background: Some(p.surface.into()),
+            background: Some(iced::Background::Color(crate::theme::SURFACE)),
             border: iced::Border {
-                color: p.border_subtle,
+                color: crate::theme::BORDER_SUBTLE,
                 width: 1.0,
-                radius: 0.0.into(),
+                radius: 24.0.into(),
+            },
+            shadow: iced::Shadow {
+                color: iced::Color { a: 0.3, ..crate::theme::BASE },
+                offset: iced::Vector { x: 0.0, y: 10.0 },
+                blur_radius: 30.0,
             },
             ..Default::default()
         }

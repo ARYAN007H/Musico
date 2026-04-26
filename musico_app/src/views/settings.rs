@@ -27,9 +27,9 @@ pub fn settings<'a, Message: 'a + Clone>(
         None => "Not selected".to_string(),
     };
 
-    let folder_section = column![
+    let folder_section = container(column![
         text("Music Folder").font(theme::FONT_ROUNDED).size(theme::TEXT_TITLE).style(p.text_primary),
-        Space::with_height(8),
+        Space::with_height(16),
         row![
             container(text(&folder_path).style(p.text_secondary))
                 .padding(12)
@@ -41,21 +41,21 @@ pub fn settings<'a, Message: 'a + Clone>(
                 .padding([12, 20])
                 .style(iced::theme::Button::Custom(Box::new(PrimaryBtnStyle(p.elevated, p.highlight))))
         ].align_items(Alignment::Center)
-    ];
+    ]).padding(24).style(theme::glass_card).width(Length::Fill);
 
     content = content.push(folder_section);
 
     // Re-index Section
-    let mut index_section = column![
+    let mut index_content = column![
         text("Library Index").font(theme::FONT_ROUNDED).size(theme::TEXT_TITLE).style(p.text_primary),
-        Space::with_height(8),
+        Space::with_height(16),
     ].spacing(8);
 
     if state.is_indexing {
         let (done, total) = state.index_progress;
         let progress = if total > 0 { done as f32 / total as f32 } else { 0.0 };
         
-        index_section = index_section.push(
+        index_content = index_content.push(
             row![
                 progress_bar(0.0..=1.0, progress)
                     .height(Length::Fixed(8.0))
@@ -65,13 +65,15 @@ pub fn settings<'a, Message: 'a + Clone>(
             ].align_items(Alignment::Center)
         );
     } else {
-        index_section = index_section.push(
+        index_content = index_content.push(
             button(text("Re-index Library").style(p.text_primary))
                 .on_press(on_scan)
                 .padding([12, 20])
                 .style(iced::theme::Button::Custom(Box::new(PrimaryBtnStyle(p.elevated, p.highlight))))
         );
     }
+
+    let index_section = container(index_content).padding(24).style(theme::glass_card).width(Length::Fill);
 
     content = content.push(index_section);
 
@@ -96,21 +98,21 @@ pub fn settings<'a, Message: 'a + Clone>(
         swatches = swatches.push(swatch);
     }
 
-    let accent_section = column![
+    let accent_section = container(column![
         text("Accent Color").font(theme::FONT_ROUNDED).size(theme::TEXT_TITLE).style(p.text_primary),
-        Space::with_height(8),
+        Space::with_height(16),
         swatches
-    ];
+    ]).padding(24).style(theme::glass_card).width(Length::Fill);
 
     content = content.push(accent_section);
 
     // About Section
-    let about_section = column![
+    let about_section = container(column![
         text("About").font(theme::FONT_ROUNDED).size(theme::TEXT_TITLE).style(p.text_primary),
-        Space::with_height(8),
+        Space::with_height(16),
         text("Musico v0.1.0").font(theme::FONT_TEXT).style(p.text_secondary),
         text("Powered by Iced 0.12, Symphonia, and pure Rust.").font(theme::FONT_TEXT).size(theme::TEXT_CAPTION).style(p.text_muted),
-    ];
+    ]).padding(24).style(theme::glass_card).width(Length::Fill);
 
     content = content.push(about_section);
 
