@@ -11,18 +11,29 @@ const SETTINGS_FILE: &str = "settings.json";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub music_folder: Option<PathBuf>,
-    pub accent_color_hex: String,
+    #[serde(default = "default_palette_id")]
+    pub palette_id: String,
+    #[serde(default = "default_font_mode")]
+    pub font_mode: String,
     pub volume: f32,
     pub library_view_mode: String, // "grid" | "list"
+    // Legacy field — kept for backward compat on load
+    #[serde(default)]
+    pub accent_color_hex: String,
 }
+
+fn default_palette_id() -> String { "nebula".to_string() }
+fn default_font_mode() -> String { "classic".to_string() }
 
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
             music_folder: dirs::audio_dir(),
-            accent_color_hex: "#9d8cff".to_string(),
+            palette_id: "nebula".to_string(),
+            font_mode: "classic".to_string(),
             volume: 1.0,
             library_view_mode: "grid".to_string(),
+            accent_color_hex: String::new(),
         }
     }
 }
@@ -46,7 +57,17 @@ impl AppConfig {
         };
 
         match std::fs::read_to_string(&path) {
-            Ok(json) => serde_json::from_str(&json).unwrap_or_default(),
+            Ok(json) => {
+                let mut config: Self = serde_json::from_str(&json).unwrap_or_default();
+                // Migrate: if old config has accent_color_hex but no palette_id, default to nebula
+                if config.palette_id.is_empty() {
+                    config.palette_id = "nebula".to_string();
+                }
+                if config.font_mode.is_empty() {
+                    config.font_mode = "classic".to_string();
+                }
+                config
+            }
             Err(_) => Self::default(),
         }
     }
@@ -74,9 +95,13 @@ impl AppConfig {
         }
     }
 
-    /// Convert accent hex to iced Color.
+    /// Convert accent hex to iced Color (legacy compat).
     pub fn accent_color(&self) -> Color {
-        color_from_hex(&self.accent_color_hex)
+        if self.accent_color_hex.is_empty() {
+            crate::theme::palette_by_id(&self.palette_id).primary
+        } else {
+            color_from_hex(&self.accent_color_hex)
+        }
     }
 }
 

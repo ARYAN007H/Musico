@@ -4,6 +4,7 @@ use musico_playback::{PlaybackEngine, PlaybackStatus, SongInfo, PlaybackQueue};
 use musico_recommender::{MusicRecommender, SongRecord, RecommendedSong};
 use std::sync::{Arc, Mutex};
 use crate::config::AppConfig;
+use crate::theme::{self, ColorPalette, FontMode, ThemeCtx};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
@@ -66,6 +67,8 @@ pub struct AppState {
     // Dynamic theming
     pub art_dominant_color: Option<Color>,
     pub art_tint: Color,
+    pub color_palette: ColorPalette,
+    pub font_mode: FontMode,
 
     // Settings
     pub music_folder: Option<PathBuf>,
@@ -87,6 +90,9 @@ impl AppState {
         } else {
             LibraryViewMode::Grid
         };
+
+        let color_palette = theme::palette_by_id(&config.palette_id);
+        let font_mode = FontMode::from_id(&config.font_mode);
 
         Self {
             active_view: View::NowPlaying,
@@ -113,7 +119,9 @@ impl AppState {
             repeat_mode: RepeatMode::Off,
 
             art_dominant_color: None,
-            art_tint: config.accent_color(),
+            art_tint: color_palette.primary,
+            color_palette,
+            font_mode,
 
             music_folder: config.music_folder,
             is_indexing: false,
@@ -123,5 +131,15 @@ impl AppState {
             playback: None,
             index_rx: None,
         }
+    }
+
+    /// Build a ThemeCtx snapshot for use in views.
+    pub fn theme_ctx(&self) -> ThemeCtx {
+        ThemeCtx::new(self.color_palette, self.font_mode)
+    }
+
+    /// Is the sidebar in compact (icon-only) mode?
+    pub fn is_compact(&self) -> bool {
+        theme::is_compact(self.window_width)
     }
 }

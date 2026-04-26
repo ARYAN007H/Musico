@@ -1,13 +1,13 @@
 use iced::mouse;
 use iced::widget::canvas::{self, Cache, Canvas, Event, Geometry, Path, Program, Stroke};
 use iced::mouse::Cursor;
-use iced::{Element, Length, Point, Rectangle, Theme};
+use iced::{Color, Element, Length, Point, Rectangle, Theme};
 use std::time::Duration;
-use crate::theme::Palette;
 
 pub struct SeekBar<'a, Message> {
     position_secs: f32,
     duration_secs: f32,
+    accent: Color,
     on_seek: Box<dyn Fn(f32) -> Message + 'a>,
 }
 
@@ -15,11 +15,13 @@ impl<'a, Message> SeekBar<'a, Message> {
     pub fn new(
         position_secs: f32,
         duration_secs: f32,
+        accent: Color,
         on_seek: impl Fn(f32) -> Message + 'a,
     ) -> Self {
         Self {
             position_secs,
             duration_secs,
+            accent,
             on_seek: Box::new(on_seek),
         }
     }
@@ -58,7 +60,6 @@ impl<'a, Message> Program<Message> for SeekBar<'a, Message> {
                         state.hover_x = Some(pos.x);
                         if state.is_dragging {
                             state.cache.clear();
-                            // Update drag visual
                         }
                     } else {
                         if !state.is_dragging {
@@ -107,17 +108,17 @@ impl<'a, Message> Program<Message> for SeekBar<'a, Message> {
         _cursor: Cursor,
     ) -> Vec<Geometry> {
         let geometry = state.cache.draw(renderer, bounds.size(), |frame| {
-            let p = Palette::default_palette();
+            let accent = self.accent;
             
             let track_height = 3.0;
             let y_center = bounds.height / 2.0;
             
-            // Draw background track
+            // Background track
             let track_bg = Path::line(
                 Point::new(0.0, y_center),
                 Point::new(bounds.width, y_center),
             );
-            let track_bg_color = iced::Color::from_rgb8(0x1e, 0x20, 0x33);
+            let track_bg_color = Color::from_rgb8(0x1e, 0x20, 0x33);
             frame.stroke(
                 &track_bg,
                 Stroke::default()
@@ -125,7 +126,7 @@ impl<'a, Message> Program<Message> for SeekBar<'a, Message> {
                     .with_width(track_height),
             );
 
-            // Calculate fill percentage based on drag or actual position
+            // Fill percentage
             let percent = if state.is_dragging {
                 if let Some(x) = state.hover_x {
                     (x / bounds.width).clamp(0.0, 1.0)
@@ -142,7 +143,7 @@ impl<'a, Message> Program<Message> for SeekBar<'a, Message> {
             
             let fill_width = bounds.width * percent;
 
-            // Draw filled track
+            // Filled track — uses accent color
             let track_fg = Path::line(
                 Point::new(0.0, y_center),
                 Point::new(fill_width, y_center),
@@ -150,30 +151,37 @@ impl<'a, Message> Program<Message> for SeekBar<'a, Message> {
             frame.stroke(
                 &track_fg,
                 Stroke::default()
-                    .with_color(p.accent)
+                    .with_color(accent)
                     .with_width(track_height),
             );
 
-            // Always draw thumb but make it more prominent when hovering
+            // Thumb with accent tint
             let is_active = state.hover_x.is_some() || state.is_dragging;
-            let thumb_radius = if is_active { 5.5 } else { 4.0 };
+            let thumb_radius = if is_active { 6.0 } else { 4.5 };
+            
+            // Glow ring on hover
+            if is_active {
+                let glow_path = Path::circle(Point::new(fill_width, y_center), thumb_radius + 4.0);
+                frame.fill(&glow_path, Color { a: 0.15, ..accent });
+            }
             
             let thumb_path = Path::circle(Point::new(fill_width, y_center), thumb_radius);
-            frame.fill(&thumb_path, iced::Color::WHITE);
-            frame.stroke(&thumb_path, Stroke::default().with_color(p.accent).with_width(2.0));
+            frame.fill(&thumb_path, Color::WHITE);
+            frame.stroke(&thumb_path, Stroke::default().with_color(accent).with_width(2.0));
         });
 
         vec![geometry]
     }
 }
 
-// We wrap the Canvas in an Element to make it easy to use
+/// Create a seek bar element with accent-colored fill and thumb.
 pub fn seek_bar<'a, Message: 'a>(
     position_secs: f32,
     duration_secs: f32,
+    accent: Color,
     on_seek: impl Fn(f32) -> Message + 'a,
 ) -> Element<'a, Message> {
-    Canvas::new(SeekBar::new(position_secs, duration_secs, on_seek))
+    Canvas::new(SeekBar::new(position_secs, duration_secs, accent, on_seek))
         .width(Length::Fill)
         .height(Length::Fixed(20.0))
         .into()

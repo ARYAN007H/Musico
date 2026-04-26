@@ -10,20 +10,34 @@ pub fn song_row<'a, Message: 'a + Clone>(
     is_playing: bool,
     on_play: impl Fn(SongRecord) -> Message,
     on_queue: Option<impl Fn(SongRecord) -> Message>,
+    accent: Color,
 ) -> Element<'a, Message> {
     let p = Palette::default_palette();
 
-    // In a real app we'd load the thumbnail asynchronously from cache.
-    // For now we use a colored placeholder if no art is readily available in memory.
-    let thumb = container(Space::new(Length::Fixed(48.0), Length::Fixed(48.0)))
+    // Thumbnail — accent-tinted when playing
+    let thumb_bg = if is_playing {
+        theme::with_alpha(accent, 0.2)
+    } else {
+        p.surface
+    };
+
+    let thumb_content: Element<'a, Message> = if is_playing {
+        text("♫").size(16.0).style(accent).into()
+    } else {
+        Space::new(Length::Fixed(48.0), Length::Fixed(48.0)).into()
+    };
+
+    let thumb = container(thumb_content)
         .width(Length::Fixed(48.0))
         .height(Length::Fixed(48.0))
+        .center_x()
+        .center_y()
         .style(iced::theme::Container::Custom(Box::new(ThumbStyle {
             radius: theme::RADIUS_SM,
-            bg: p.surface,
+            bg: thumb_bg,
         })));
 
-    let title_color = if is_playing { p.accent } else { p.text_primary };
+    let title_color = if is_playing { accent } else { p.text_primary };
 
     let middle = column![
         text(&song.title).font(theme::FONT_TEXT).size(theme::TEXT_BODY).style(title_color),
@@ -49,10 +63,11 @@ pub fn song_row<'a, Message: 'a + Clone>(
         right_col = right_col.push(queue_btn);
     }
 
-    let bg_color = if index % 2 == 0 {
+    let bg_color = if is_playing {
+        theme::with_alpha(accent, 0.06)
+    } else if index % 2 == 0 {
         p.base
     } else {
-        // Approximate 30% mix of elevated over base
         Color {
             r: p.base.r * 0.7 + p.elevated.r * 0.3,
             g: p.base.g * 0.7 + p.elevated.g * 0.3,
@@ -78,6 +93,8 @@ pub fn song_row<'a, Message: 'a + Clone>(
     .style(iced::theme::Button::Custom(Box::new(RowStyle {
         bg: bg_color,
         hover_bg: p.highlight,
+        accent,
+        is_playing,
     })))
     .into()
 }
@@ -105,6 +122,8 @@ impl iced::widget::container::StyleSheet for ThumbStyle {
 struct RowStyle {
     bg: Color,
     hover_bg: Color,
+    accent: Color,
+    is_playing: bool,
 }
 
 impl iced::widget::button::StyleSheet for RowStyle {
@@ -114,8 +133,8 @@ impl iced::widget::button::StyleSheet for RowStyle {
         iced::widget::button::Appearance {
             background: Some(self.bg.into()),
             border: iced::Border {
-                color: iced::Color::TRANSPARENT,
-                width: 0.0,
+                color: if self.is_playing { self.accent } else { iced::Color::TRANSPARENT },
+                width: if self.is_playing { 0.0 } else { 0.0 },
                 radius: 8.0.into(),
             },
             ..Default::default()
@@ -126,8 +145,8 @@ impl iced::widget::button::StyleSheet for RowStyle {
         iced::widget::button::Appearance {
             background: Some(self.hover_bg.into()),
             border: iced::Border {
-                color: iced::Color::TRANSPARENT,
-                width: 0.0,
+                color: theme::with_alpha(self.accent, 0.4),
+                width: 1.0,
                 radius: 8.0.into(),
             },
             ..Default::default()
