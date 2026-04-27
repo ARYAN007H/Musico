@@ -96,6 +96,7 @@ impl AppConfig {
     }
 
     /// Convert accent hex to iced Color (legacy compat).
+    #[allow(dead_code)]
     pub fn accent_color(&self) -> Color {
         if self.accent_color_hex.is_empty() {
             crate::theme::palette_by_id(&self.palette_id).primary
@@ -105,6 +106,7 @@ impl AppConfig {
     }
 }
 
+#[allow(dead_code)]
 fn color_from_hex(hex: &str) -> Color {
     let hex = hex.trim_start_matches('#');
     if hex.len() < 6 {
@@ -117,6 +119,7 @@ fn color_from_hex(hex: &str) -> Color {
 }
 
 /// Convert iced Color to hex string.
+#[allow(dead_code)]
 pub fn color_to_hex(c: Color) -> String {
     let r = (c.r * 255.0) as u8;
     let g = (c.g * 255.0) as u8;

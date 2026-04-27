@@ -167,6 +167,7 @@ pub const ALL_FONT_MODES: [FontMode; 4] = [
 // A snapshot of the current palette + font mode for easy passing into views.
 
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 pub struct ThemeCtx {
     pub palette: ColorPalette,
     pub font_mode: FontMode,
@@ -198,6 +199,7 @@ impl ThemeCtx {
         }
     }
 
+    #[allow(dead_code)]
     pub fn default_ctx() -> Self {
         Self::new(PALETTE_NEBULA, FontMode::Classic)
     }
@@ -205,8 +207,10 @@ impl ThemeCtx {
 
 // ─── Legacy Compat (used by code that hasn't migrated yet) ──────────────────
 
+#[allow(dead_code)]
 pub const FONT_DISPLAY: iced::Font = iced::Font::with_name("SF Pro Display");
 pub const FONT_TEXT: iced::Font = iced::Font::with_name("SF Pro Text");
+#[allow(dead_code)]
 pub const FONT_ROUNDED: iced::Font = iced::Font::with_name("SF Pro Rounded");
 
 pub const RADIUS_LG: f32 = 16.0;
@@ -403,6 +407,7 @@ impl iced::widget::svg::StyleSheet for SvgStyle {
 }
 
 /// Ghost transport button (prev, next, shuffle, repeat)
+#[allow(dead_code)]
 pub struct TransportButton;
 
 impl button::StyleSheet for TransportButton {

@@ -13,12 +13,14 @@ pub fn library<'a, Message: 'a + Clone>(
     on_play: impl Fn(SongRecord) -> Message,
     on_queue: impl Fn(SongRecord) -> Message,
 ) -> Element<'a, Message> {
-    let p = Palette::default_palette();
+    let p = Palette::from_color_palette(&state.color_palette);
+    let ctx = state.theme_ctx();
+    let accent = state.art_tint;
 
     // Header with search and view toggle
     let search_input = text_input("Search your library...", &state.search_query)
         .on_input(on_search)
-        .font(theme::FONT_TEXT)
+        .font(ctx.font_text)
         .size(14)
         .padding(10)
         .style(iced::theme::TextInput::Custom(Box::new(SearchInputStyle(p.surface, p.text_primary, p.text_muted))));
@@ -36,7 +38,7 @@ pub fn library<'a, Message: 'a + Clone>(
 
     let search_container = container(search_row)
         .width(Length::Fill)
-        .style(iced::theme::Container::Custom(Box::new(SearchContainerStyle(p.surface, theme::RADIUS_MD))));
+        .style(iced::theme::Container::Custom(Box::new(SearchContainerStyle(p.surface, ctx.radius_md))));
 
     let view_icon = match state.library_view_mode {
         LibraryViewMode::Grid => "☰",
@@ -48,9 +50,30 @@ pub fn library<'a, Message: 'a + Clone>(
         .style(iced::theme::Button::Text)
         .padding(10);
 
+    // Song count badge
+    let songs = if state.search_query.is_empty() {
+        &state.library
+    } else {
+        &state.filtered_library
+    };
+
+    let count_text = if state.search_query.is_empty() {
+        format!("{} songs", songs.len())
+    } else {
+        format!("{} results", songs.len())
+    };
+
+    let count_badge = container(
+        text(&count_text).font(ctx.font_rounded).size(11.0).style(p.text_muted)
+    )
+    .padding([4, 10])
+    .style(iced::theme::Container::Custom(Box::new(BadgeStyle(accent))));
+
     let header = row![
         search_container,
-        Space::with_width(16),
+        Space::with_width(10),
+        count_badge,
+        Space::with_width(10),
         toggle_view_btn,
     ]
     .align_items(Alignment::Center)
@@ -58,18 +81,22 @@ pub fn library<'a, Message: 'a + Clone>(
     .padding([20, 40]);
 
     // Content
-    let songs = if state.search_query.is_empty() {
-        &state.library
-    } else {
-        &state.filtered_library
-    };
-
     let content: Element<'a, Message> = if songs.is_empty() {
         container(
-            text(if state.search_query.is_empty() { "Library is empty." } else { "No results found." })
-                .font(theme::FONT_TEXT)
-                .size(theme::TEXT_TITLE)
-                .style(p.text_muted)
+            column![
+                text("♫").size(48.0).style(theme::with_alpha(accent, 0.3)),
+                Space::with_height(12),
+                text(if state.search_query.is_empty() { "Library is empty" } else { "No results found" })
+                    .font(ctx.font_display)
+                    .size(theme::TEXT_TITLE)
+                    .style(p.text_muted),
+                Space::with_height(4),
+                text(if state.search_query.is_empty() { "Add a music folder in Settings" } else { "Try a different search" })
+                    .font(ctx.font_text)
+                    .size(theme::TEXT_CAPTION)
+                    .style(p.text_muted),
+            ]
+            .align_items(Alignment::Center)
         )
         .width(Length::Fill)
         .height(Length::Fill)
@@ -84,7 +111,7 @@ pub fn library<'a, Message: 'a + Clone>(
 
                 for (i, song) in songs.iter().enumerate() {
                     let is_playing = song.id == current_id;
-                    col = col.push(song_row(song, i, is_playing, &on_play, Some(&on_queue)));
+                    col = col.push(song_row(song, i, is_playing, &on_play, Some(&on_queue), accent));
                 }
 
                 container(scrollable(col.padding([0, 40, 40, 40]))).height(Length::Fill).into()
@@ -98,7 +125,7 @@ pub fn library<'a, Message: 'a + Clone>(
                 let mut items_in_row = 0;
 
                 for song in songs {
-                    current_row = current_row.push(grid_card(song, art_size, &on_play));
+                    current_row = current_row.push(grid_card(song, art_size, &on_play, accent, &ctx));
                     items_in_row += 1;
 
                     if items_in_row == columns {
@@ -109,7 +136,6 @@ pub fn library<'a, Message: 'a + Clone>(
                 }
 
                 if items_in_row > 0 {
-                    // Fill remaining space to keep alignment
                     for _ in items_in_row..columns {
                         current_row = current_row.push(Space::new(Length::Fixed(art_size), Length::Fixed(0.0)));
                     }
@@ -128,6 +154,8 @@ fn grid_card<'a, Message: 'a + Clone>(
     song: &SongRecord,
     art_size: f32,
     on_play: &impl Fn(SongRecord) -> Message,
+    accent: Color,
+    ctx: &theme::ThemeCtx,
 ) -> Element<'a, Message> {
     let p = Palette::default_palette();
 
@@ -135,12 +163,12 @@ fn grid_card<'a, Message: 'a + Clone>(
         .width(Length::Fixed(art_size))
         .height(Length::Fixed(art_size))
         .style(iced::theme::Container::Custom(Box::new(GridArtStyle {
-            radius: 10.0,
+            radius: ctx.radius_md,
             bg: p.surface,
         })));
 
-    let title = text(&song.title).font(theme::FONT_TEXT).size(theme::TEXT_BODY).style(p.text_primary);
-    let artist = text(&song.artist).font(theme::FONT_TEXT).size(theme::TEXT_CAPTION).style(p.text_muted);
+    let title = text(&song.title).font(ctx.font_text).size(theme::TEXT_BODY).style(p.text_primary);
+    let artist = text(&song.artist).font(ctx.font_text).size(theme::TEXT_CAPTION).style(p.text_muted);
 
     let song_clone = song.clone();
 
@@ -157,12 +185,13 @@ fn grid_card<'a, Message: 'a + Clone>(
     .style(iced::theme::Button::Custom(Box::new(GridCardStyle {
         bg: Color::TRANSPARENT,
         hover_bg: p.elevated,
+        accent,
     })))
     .padding(8)
     .into()
 }
 
-// Custom Styles
+// ─── Custom Styles ───────────────────────────────────────────────────────────
 
 #[allow(dead_code)]
 struct SearchInputStyle(Color, Color, Color);
@@ -212,6 +241,22 @@ impl iced::widget::container::StyleSheet for SearchContainerStyle {
     }
 }
 
+struct BadgeStyle(Color);
+impl iced::widget::container::StyleSheet for BadgeStyle {
+    type Style = iced::Theme;
+    fn appearance(&self, _style: &Self::Style) -> iced::widget::container::Appearance {
+        iced::widget::container::Appearance {
+            background: Some(theme::with_alpha(self.0, 0.08).into()),
+            border: iced::Border {
+                color: iced::Color::TRANSPARENT,
+                width: 0.0,
+                radius: 50.0.into(),
+            },
+            ..Default::default()
+        }
+    }
+}
+
 struct GridArtStyle { radius: f32, bg: Color }
 impl iced::widget::container::StyleSheet for GridArtStyle {
     type Style = iced::Theme;
@@ -228,7 +273,7 @@ impl iced::widget::container::StyleSheet for GridArtStyle {
     }
 }
 
-struct GridCardStyle { bg: Color, hover_bg: Color }
+struct GridCardStyle { bg: Color, hover_bg: Color, accent: Color }
 impl iced::widget::button::StyleSheet for GridCardStyle {
     type Style = iced::Theme;
     fn active(&self, _style: &Self::Style) -> iced::widget::button::Appearance {
@@ -246,9 +291,14 @@ impl iced::widget::button::StyleSheet for GridCardStyle {
         iced::widget::button::Appearance {
             background: Some(self.hover_bg.into()),
             border: iced::Border {
-                color: iced::Color::TRANSPARENT,
-                width: 0.0,
+                color: theme::with_alpha(self.accent, 0.2),
+                width: 1.0,
                 radius: 12.0.into(),
+            },
+            shadow: iced::Shadow {
+                color: iced::Color { a: 0.2, ..theme::BASE },
+                offset: iced::Vector { x: 0.0, y: 4.0 },
+                blur_radius: 12.0,
             },
             ..Default::default()
         }

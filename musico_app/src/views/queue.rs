@@ -13,24 +13,40 @@ pub fn queue<'a, Message: 'a + Clone>(
     on_play_recommendation: impl Fn(SongRecord) -> Message + 'a,
     on_queue_recommendation: impl Fn(SongRecord) -> Message + 'a,
 ) -> Element<'a, Message> {
-    let p = Palette::default_palette();
+    let p = Palette::from_color_palette(&state.color_palette);
+    let ctx = state.theme_ctx();
+    let accent = state.art_tint;
 
     let mut content = column![].spacing(20);
 
     // SECTION 1: QUEUE
     content = content.push(
         text("UPCOMING")
-            .font(theme::FONT_ROUNDED)
+            .font(ctx.font_rounded)
             .size(theme::TEXT_TITLE)
             .style(p.text_primary)
     );
 
     if state.queue.is_empty() {
+        // Inviting empty state
         content = content.push(
-            text("Your queue is empty.")
-                .font(theme::FONT_TEXT)
-                .size(theme::TEXT_BODY)
-                .style(p.text_muted)
+            container(
+                column![
+                    text("♫").size(32.0).style(theme::with_alpha(accent, 0.3)),
+                    Space::with_height(8),
+                    text("Queue is empty").font(ctx.font_text).size(theme::TEXT_BODY).style(p.text_muted),
+                    Space::with_height(4),
+                    text("Add songs from Library or let Smart Radio pick for you")
+                        .font(ctx.font_text)
+                        .size(theme::TEXT_CAPTION)
+                        .style(p.text_muted),
+                ]
+                .align_items(Alignment::Center)
+                .spacing(0)
+            )
+            .width(Length::Fill)
+            .center_x()
+            .padding([20, 0])
         );
     } else {
         let mut q_col = column![].spacing(2);
@@ -43,15 +59,15 @@ pub fn queue<'a, Message: 'a + Clone>(
             let song_row = row![
                 container(
                     text(format!("{}", i + 1))
-                        .font(theme::FONT_ROUNDED)
+                        .font(ctx.font_rounded)
                         .size(theme::TEXT_CAPTION)
                         .style(p.text_muted)
                 ).width(Length::Fixed(28.0)).center_x(),
                 column![
-                    text(&song.title).font(theme::FONT_TEXT).size(theme::TEXT_BODY).style(p.text_primary),
-                    text(&song.artist).font(theme::FONT_TEXT).size(theme::TEXT_CAPTION).style(p.text_muted),
+                    text(&song.title).font(ctx.font_text).size(theme::TEXT_BODY).style(p.text_primary),
+                    text(&song.artist).font(ctx.font_text).size(theme::TEXT_CAPTION).style(p.text_muted),
                 ].spacing(2).width(Length::Fill),
-                text(format_time(song.duration_secs)).font(theme::FONT_TEXT).size(theme::TEXT_CAPTION).style(p.text_muted),
+                text(format_time(song.duration_secs)).font(ctx.font_text).size(theme::TEXT_CAPTION).style(p.text_muted),
                 remove_btn,
             ]
             .align_items(Alignment::Center)
@@ -77,34 +93,44 @@ pub fn queue<'a, Message: 'a + Clone>(
     }
 
     // DIVIDER
-    content = content.push(Space::with_height(20));
+    content = content.push(Space::with_height(16));
     content = content.push(
         container(Space::with_height(1))
             .width(Length::Fill)
             .style(iced::theme::Container::Custom(Box::new(DividerStyle(p.border_subtle))))
     );
-    content = content.push(Space::with_height(20));
+    content = content.push(Space::with_height(16));
 
     // SECTION 2: RECOMMENDED
     content = content.push(
         text("Suggested for this session")
-            .font(theme::FONT_ROUNDED)
+            .font(ctx.font_rounded)
             .size(theme::TEXT_TITLE)
             .style(p.text_primary)
     );
 
     if state.recommendations.is_empty() {
         content = content.push(
-            text("Play some music to get recommendations.")
-                .font(theme::FONT_TEXT)
-                .size(theme::TEXT_BODY)
-                .style(p.text_muted)
+            container(
+                column![
+                    text("🎵").size(24.0).style(theme::with_alpha(accent, 0.3)),
+                    Space::with_height(6),
+                    text("Play some music to get recommendations")
+                        .font(ctx.font_text)
+                        .size(theme::TEXT_BODY)
+                        .style(p.text_muted),
+                ]
+                .align_items(Alignment::Center)
+            )
+            .width(Length::Fill)
+            .center_x()
+            .padding([16, 0])
         );
     } else {
         let mut recs_col = column![].spacing(2);
         
         for (i, rec) in state.recommendations.iter().enumerate() {
-            let row_el = song_row(&rec.record, i, false, &on_play_recommendation, Some(&on_queue_recommendation));
+            let row_el = song_row(&rec.record, i, false, &on_play_recommendation, Some(&on_queue_recommendation), accent);
             
             // Similarity indicator dot
             let dot_color = if rec.final_score > 0.8 {

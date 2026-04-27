@@ -10,9 +10,9 @@ use musico_playback::{PlaybackEngine, PlaybackEvent, PlaybackStatus, SongInfo};
 use musico_recommender::{MusicRecommender, SongRecord, RecommendedSong};
 
 use crate::state::{AppState, View, LibraryViewMode, ShuffleMode, RepeatMode};
-use crate::theme::{self, Palette};
+use crate::theme::{self, ColorPalette, FontMode, Palette};
 use crate::scanner;
-use crate::config::{self, AppConfig};
+use crate::config::AppConfig;
 
 use crate::views::{now_playing, library, queue, settings};
 use crate::components::sidebar;
@@ -57,7 +57,8 @@ pub enum Message {
     PickFolder,
     MusicFolderChanged(PathBuf),
     ArtColorExtracted(Color),
-    SetAccentColor(Color),
+    SetPalette(ColorPalette),
+    SetFontMode(FontMode),
 
     // Window
     WindowResized(f32, f32),
@@ -88,7 +89,6 @@ impl Application for Musico {
     fn new(_flags: ()) -> (Self, Command<Message>) {
         let state = AppState::new();
 
-        // Initialization commands
         let init_recommender = Command::perform(
             async {
                 let db_path = dirs::data_dir()
@@ -131,7 +131,6 @@ impl Application for Musico {
             Message::RecommenderReady(rec) => {
                 self.0.recommender = Some(rec.clone());
                 
-                // Load library initially
                 let rec_clone = rec.clone();
                 return Command::perform(
                     async move {
@@ -157,7 +156,6 @@ impl Application for Musico {
                     let song_info = record_to_song_info(&record);
                     let _ = engine.play(song_info);
                     
-                    // Fire-and-forget: fetch recommendations async WITHOUT blocking playback.
                     if let Some(rec) = &self.0.recommender {
                         let rec_clone = rec.clone();
                         let current_id = record.id.clone();
@@ -235,7 +233,6 @@ impl Application for Musico {
                         self.0.playback_status = PlaybackStatus::Playing;
                         self.0.current_song = Some(song.clone());
                         
-                        // Async task to extract dominant color if there's cover art
                         if let Some(art_bytes) = &song.cover_art {
                             let bytes_clone = art_bytes.clone();
                             return Command::perform(
@@ -249,7 +246,7 @@ impl Application for Musico {
                                 Message::ArtColorExtracted
                             );
                         } else {
-                            self.0.art_tint = Palette::default_palette().accent;
+                            self.0.art_tint = self.0.color_palette.primary;
                         }
                     }
                     PlaybackEvent::Paused { position_secs } => {
@@ -269,13 +266,11 @@ impl Application for Musico {
                         self.0.listened_secs = listened_secs;
                     }
                     PlaybackEvent::SongEnded { song_id, listened_secs, duration_secs } => {
-                        // Log the listen event.
                         if let Some(rec) = &self.0.recommender {
                             let guard = rec.lock().unwrap();
                             let _ = guard.log_listen(&song_id, listened_secs, duration_secs as u32);
                         }
                         
-                        // Handle repeat mode.
                         if self.0.repeat_mode == RepeatMode::One {
                             if let Some(song) = &self.0.current_song {
                                 if let Some(engine) = &self.0.playback {
@@ -285,7 +280,6 @@ impl Application for Musico {
                             return Command::none();
                         }
 
-                        // Play next from queue or smart radio.
                         self.play_next();
                     }
                     PlaybackEvent::BufferingStarted => {
@@ -402,7 +396,6 @@ impl Application for Musico {
                         if let Some(path) = maybe_path {
                             Message::MusicFolderChanged(path)
                         } else {
-                            // User cancelled — no-op, just navigate back to settings.
                             Message::NavigateTo(View::Settings)
                         }
                     },
@@ -416,8 +409,16 @@ impl Application for Musico {
                 self.0.art_dominant_color = Some(color);
                 self.0.art_tint = color;
             }
-            Message::SetAccentColor(color) => {
-                self.0.art_tint = color;
+            Message::SetPalette(palette) => {
+                self.0.color_palette = palette;
+                // Reset art_tint to palette primary when no song playing
+                if self.0.current_song.is_none() {
+                    self.0.art_tint = palette.primary;
+                }
+                self.save_config();
+            }
+            Message::SetFontMode(mode) => {
+                self.0.font_mode = mode;
                 self.save_config();
             }
 
@@ -441,8 +442,6 @@ impl Application for Musico {
                 Some(Message::WindowResized(width as f32, height as f32))
             }
             iced::Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
-                // Only capture shortcuts when no text input is focused.
-                // We'll handle modifier-based shortcuts and unmodified keys.
                 match &key {
                     keyboard::Key::Named(named) => match named {
                         keyboard::key::Named::Space => Some(Message::KeyPressed(key)),
@@ -493,7 +492,7 @@ impl Application for Musico {
         container(content)
             .width(Length::Fill)
             .height(Length::Fill)
-            .padding(16)
+            .padding(12)
             .style(iced::theme::Container::Custom(Box::new(BaseContainerStyle)))
             .into()
     }
@@ -522,6 +521,7 @@ impl Musico {
                 Message::Previous,
                 Message::Next,
                 Message::Seek,
+                Message::SetVolume,
                 Message::PlaySong,
                 Message::AddToQueue,
                 Message::ToggleShuffle,
@@ -546,7 +546,8 @@ impl Musico {
                 &self.0,
                 Message::PickFolder,
                 Message::ScanLibrary,
-                |c| Message::SetAccentColor(c),
+                |p| Message::SetPalette(p),
+                |m| Message::SetFontMode(m),
             ),
         }
     }
@@ -555,22 +556,21 @@ impl Musico {
         let sidebar = sidebar(&self.0);
         let main = self.main_content();
         
-        row![sidebar, main].spacing(16).into()
+        row![sidebar, main].spacing(12).into()
     }
 
     fn view_standard(&self) -> Element<'_, Message> {
         let sidebar = sidebar(&self.0);
         let main = self.main_content();
         
-        row![sidebar, main].spacing(16).into()
+        row![sidebar, main].spacing(12).into()
     }
 
     fn view_wide(&self) -> Element<'_, Message> {
         let sidebar = sidebar(&self.0);
         
-        // In wide mode, queue might be visible on the side
         let main = if self.0.active_view == View::Queue {
-            self.main_content() // Don't show queue twice
+            self.main_content()
         } else {
             let q_panel = queue(
                 &self.0,
@@ -583,13 +583,12 @@ impl Musico {
             row![
                 container(self.main_content()).width(Length::Fill),
                 container(q_panel).width(Length::Fixed(280.0)).style(iced::theme::Container::Custom(Box::new(QueuePanelStyle)))
-            ].spacing(16).into()
+            ].spacing(12).into()
         };
 
-        row![sidebar, main].spacing(16).into()
+        row![sidebar, main].spacing(12).into()
     }
 
-    /// Handles keyboard shortcuts.
     fn handle_key(&mut self, key: keyboard::Key) -> Command<Message> {
         match key {
             keyboard::Key::Named(keyboard::key::Named::Space) => {
@@ -667,9 +666,7 @@ impl Musico {
         Command::none()
     }
 
-    /// Plays the next song based on queue, smart radio, or repeat mode.
     fn play_next(&mut self) {
-        // Try queue first.
         if let Some(next_song) = self.0.queue.next() {
             if let Some(engine) = &self.0.playback {
                 let _ = engine.play(next_song);
@@ -677,7 +674,6 @@ impl Musico {
             return;
         }
 
-        // Smart Radio: auto-fill from recommendations.
         if self.0.shuffle_mode == ShuffleMode::SmartRadio && !self.0.recommendations.is_empty() {
             let rec = self.0.recommendations.remove(0);
             let song_info = record_to_song_info(&rec.record);
@@ -687,7 +683,6 @@ impl Musico {
             return;
         }
 
-        // Shuffle: pick random from library.
         if self.0.shuffle_mode == ShuffleMode::Shuffle && !self.0.library.is_empty() {
             use rand::Rng;
             let idx = rand::thread_rng().gen_range(0..self.0.library.len());
@@ -699,7 +694,6 @@ impl Musico {
             return;
         }
 
-        // Repeat All: restart from beginning of library.
         if self.0.repeat_mode == RepeatMode::All && !self.0.library.is_empty() {
             let record = self.0.library[0].clone();
             let song_info = record_to_song_info(&record);
@@ -709,12 +703,12 @@ impl Musico {
         }
     }
 
-    /// Saves current config to disk.
     fn save_config(&self) {
         let mut config = AppConfig::load();
         config.music_folder = self.0.music_folder.clone();
         config.volume = self.0.volume;
-        config.accent_color_hex = config::color_to_hex(self.0.art_tint);
+        config.palette_id = self.0.color_palette.id.to_string();
+        config.font_mode = self.0.font_mode.id().to_string();
         config.library_view_mode = match self.0.library_view_mode {
             LibraryViewMode::Grid => "grid".to_string(),
             LibraryViewMode::List => "list".to_string(),

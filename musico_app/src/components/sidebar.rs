@@ -199,7 +199,7 @@ fn logo_section<'a>(compact: bool, accent: iced::Color) -> Element<'a, Message> 
     )
     .width(Length::Fixed(30.0))
     .height(Length::Fixed(30.0))
-    .style(|_theme: &iced::Theme| container::Appearance {
+    .style(move |_theme: &iced::Theme| container::Appearance {
         background: Some(Background::Color(with_alpha(accent, 0.12))),
         border: Border {
             radius: 8.0.into(),

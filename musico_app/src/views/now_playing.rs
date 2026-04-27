@@ -1,6 +1,6 @@
 use iced::widget::{button, column, container, row, slider, text, Space, scrollable};
 use iced::{Alignment, Color, Element, Length};
-use crate::state::{AppState, ShuffleMode, RepeatMode, View};
+use crate::state::{AppState, ShuffleMode, RepeatMode};
 use crate::theme::{self, Palette};
 use crate::components::seek_bar::{seek_bar, format_time};
 use crate::components::art_canvas::art_canvas;
@@ -23,6 +23,7 @@ pub fn now_playing<'a, Message: 'a + Clone>(
     on_previous: Message,
     on_next: Message,
     on_seek: impl Fn(f32) -> Message + 'a,
+    on_set_volume: impl Fn(f32) -> Message + 'a,
     on_play_recommendation: impl Fn(SongRecord) -> Message,
     on_queue_recommendation: impl Fn(SongRecord) -> Message,
     on_toggle_shuffle: Message,
@@ -171,14 +172,9 @@ pub fn now_playing<'a, Message: 'a + Clone>(
     let volume_row = row![
         svg_icon::<Message>(vol_icon, 16, p.text_muted),
         Space::with_width(8),
-        slider(0.0..=1.0, state.volume, {
-            // We can't call on_set_volume because it's not passed as param.
-            // Volume messages are handled via Message::SetVolume in app.rs.
-            // For now use a dummy — we'll fix the signature.
-            |_v: f32| on_toggle_play.clone() // placeholder, fixed below
-        })
-        .width(Length::Fixed(140.0))
-        .style(iced::theme::Slider::Custom(Box::new(theme::VolumeSliderStyle(accent)))),
+        slider(0.0..=1.0, state.volume, on_set_volume)
+            .width(Length::Fixed(140.0))
+            .style(iced::theme::Slider::Custom(Box::new(theme::VolumeSliderStyle(accent)))),
     ]
     .align_items(Alignment::Center)
     .spacing(0);
@@ -197,8 +193,7 @@ pub fn now_playing<'a, Message: 'a + Clone>(
         );
     }
 
-    // Volume — re-added without on_set_volume for now (will fix via app.rs message plumbing)
-    // content = content.push(volume_row);
+    content = content.push(volume_row);
 
     // Recommendations
     if !state.recommendations.is_empty() {
