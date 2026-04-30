@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#1a1b2e"/>
+      <stop offset="100%" stop-color="#0a0b14"/>
+    </radialGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="60%">
+      <stop offset="0%" stop-color="#9d8cff" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#9d8cff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="note" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#b8aaff"/>
+      <stop offset="100%" stop-color="#7b6cdf"/>
+    </linearGradient>
+  </defs>
+  <!-- Background circle -->
+  <circle cx="128" cy="128" r="128" fill="url(#bg)"/>
+  <!-- Subtle glow -->
+  <circle cx="128" cy="120" r="80" fill="url(#glow)"/>
+  <!-- Musical note -->
+  <g transform="translate(128,128) scale(0.9)" fill="url(#note)">
+    <!-- Note head 1 -->
+    <ellipse cx="-20" cy="32" rx="22" ry="16" transform="rotate(-20,-20,32)"/>
+    <!-- Note head 2 -->
+    <ellipse cx="30" cy="18" rx="22" ry="16" transform="rotate(-20,30,18)"/>
+    <!-- Stems -->
+    <rect x="-2" y="-50" width="5" height="88" rx="2.5" transform="rotate(-5,-2,-50)"/>
+    <rect x="48" y="-64" width="5" height="88" rx="2.5" transform="rotate(-5,48,-64)"/>
+    <!-- Beam -->
+    <rect x="-4" y="-54" width="56" height="7" rx="3" transform="rotate(-12,24,-54)"/>
+    <rect x="-4" y="-40" width="56" height="7" rx="3" transform="rotate(-12,24,-40)"/>
+  </g>
+  <!-- Subtle ring -->
+  <circle cx="128" cy="128" r="120" fill="none" stroke="#9d8cff" stroke-opacity="0.08" stroke-width="1"/>
+</svg>
