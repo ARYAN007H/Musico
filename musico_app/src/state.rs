@@ -34,6 +34,16 @@ pub enum RepeatMode {
     All,
 }
 
+#[derive(Debug, Clone)]
+pub enum UpdateStatus {
+    Idle,
+    Checking,
+    Available { version: String, url: String },
+    Downloading,
+    Ready,
+    Error(String),
+}
+
 pub struct AppState {
     // Navigation
     pub active_view: View,
@@ -49,6 +59,7 @@ pub struct AppState {
     pub duration_secs: f32,
     pub volume: f32,
     pub listened_secs: u32,
+    pub is_liked: bool,
 
     // Library
     pub library: Vec<SongRecord>,
@@ -74,6 +85,9 @@ pub struct AppState {
     pub music_folder: Option<PathBuf>,
     pub is_indexing: bool,
     pub index_progress: (usize, usize), // (done, total)
+
+    // Auto-update
+    pub update_status: UpdateStatus,
 
     // Recommender (owned via Arc/Mutex for shared access if needed)
     pub recommender: Option<Arc<Mutex<MusicRecommender>>>,
@@ -106,6 +120,7 @@ impl AppState {
             duration_secs: 0.0,
             volume: config.volume,
             listened_secs: 0,
+            is_liked: false,
 
             library: Vec::new(),
             filtered_library: Vec::new(),
@@ -126,6 +141,8 @@ impl AppState {
             music_folder: config.music_folder,
             is_indexing: false,
             index_progress: (0, 0),
+
+            update_status: UpdateStatus::Idle,
 
             recommender: None,
             playback: None,

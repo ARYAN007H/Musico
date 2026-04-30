@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <code>Instant playback</code> · <code>Smart Radio</code> · <code>Ambient UI</code> · <code>< 30 MB RAM</code>
+  <code>Instant playback</code> · <code>Smart Radio</code> · <code>Ambient UI</code> · <code>Auto-Update</code> · <code>< 30 MB RAM</code>
 </p>
 
 ---
@@ -68,10 +68,12 @@ Three independent crates, zero C dependencies (aside from ALSA), one workspace.
 
 ### UI / UX
 - **Ambient Glow** — album art's dominant color is extracted and used to tint the Now Playing background and the play button's glow shadow.
-- **Celestia Shell aesthetic** — dark glassmorphism, floating panels, pill-shaped nav, SF Pro typography.
-- **Responsive layout** — compact / standard / wide breakpoints. Queue panel appears as a sidebar in wide mode.
+- **6 Color Palettes** — Nebula (purple) · Sakura (pink) · Aurora (green) · Ocean (blue) · Ember (orange) · Mono (grayscale). Switch instantly in Settings.
+- **4 Font Personalities** — Classic (SF Pro) · Playful (Comfortaa) · Techno (JetBrains Mono) · Cozy (Nunito). Each adjusts border radii for a cohesive feel.
+- **Responsive layout** — compact icon-rail sidebar at <700px, standard at 700-1100px, wide with queue side-panel at >1100px.
+- **Auto-update** — check for updates from Settings, downloads and installs automatically from GitHub Releases. Your data is never touched.
 - **Native folder picker** — `rfd` opens your OS file dialog to select your music folder. No more editing config files.
-- **Settings persistence** — music folder, accent color, volume, and view mode are saved to `~/.config/musico/settings.json`.
+- **Settings persistence** — palette, font mode, volume, and view mode are saved to `~/.config/musico/settings.json`.
 
 ### Keyboard Shortcuts
 
@@ -94,25 +96,50 @@ Powered by [Symphonia](https://github.com/pdeljanov/Symphonia) with the `all` fe
 
 ---
 
-## 📦 Building
+## 📦 Install
 
-### Prerequisites
+### Pre-built Binary (recommended)
+
+Download the latest release from [GitHub Releases](https://github.com/ARYAN007H/Musico/releases):
+
+```bash
+# Download
+curl -LO https://github.com/ARYAN007H/Musico/releases/latest/download/musico-linux-x86_64
+
+# Make executable
+chmod +x musico-linux-x86_64
+
+# Run
+./musico-linux-x86_64
+```
+
+Or move it to your PATH:
+```bash
+sudo mv musico-linux-x86_64 /usr/local/bin/musico
+musico
+```
+
+> **Auto-update**: Once running, go to Settings → Check for Updates to update in-place.
+
+### Build from Source
+
+#### Prerequisites
 
 ```bash
 # Arch / Manjaro
 sudo pacman -S rust alsa-lib
 
 # Ubuntu / Debian
-sudo apt install rustc cargo libasound2-dev
+sudo apt install rustc cargo libasound2-dev pkg-config libfontconfig1-dev
 
 # Fedora
 sudo dnf install rust cargo alsa-lib-devel
 ```
 
-### Build & Run
+#### Build & Run
 
 ```bash
-git clone https://github.com/your-username/Musico.git
+git clone https://github.com/ARYAN007H/Musico.git
 cd Musico
 
 # Debug (fast compile, slower runtime)
@@ -184,11 +211,12 @@ Musico uses the **Celestia Shell** design language:
 | `BASE` | `#040409` | Window background |
 | `SURFACE` | `#0e0f16` | Panels, cards |
 | `ELEVATED` | `#161721` | Hover states, inputs |
-| `ACCENT_PURPLE` | `#9d8cff` | Active nav, play button, seek bar |
+| `ACCENT_NEBULA` | `#9d8cff` | Default palette accent |
 | `TEXT_PRIMARY` | `#e2e4f0` | Headings, titles |
 | `TEXT_MUTED` | `#4a4d63` | Captions, placeholders |
 
-Five accent colors available: **Purple** · **Rose** · **Cyan** · **Amber** · **Green**
+Six color palettes: **Nebula** · **Sakura** · **Aurora** · **Ocean** · **Ember** · **Mono**
+Four font modes: **Classic** · **Playful** · **Techno** · **Cozy**
 
 ---
 
@@ -199,7 +227,8 @@ Settings are stored at `~/.config/musico/settings.json`:
 ```json
 {
   "music_folder": "/home/user/Music",
-  "accent_color_hex": "#9d8cff",
+  "palette_id": "nebula",
+  "font_mode": "classic",
   "volume": 0.85,
   "library_view_mode": "grid"
 }

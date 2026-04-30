@@ -9,6 +9,8 @@ pub fn settings<'a, Message: 'a + Clone>(
     on_scan: Message,
     on_set_palette: impl Fn(ColorPalette) -> Message + 'a,
     on_set_font_mode: impl Fn(FontMode) -> Message + 'a,
+    on_check_update: Message,
+    on_download_update: impl Fn(String) -> Message + 'a,
 ) -> Element<'a, Message> {
     let p = Palette::from_color_palette(&state.color_palette);
     let ctx = state.theme_ctx();
@@ -185,11 +187,86 @@ pub fn settings<'a, Message: 'a + Clone>(
 
     content = content.push(shortcuts_section);
 
+    // ─── Auto-Update Section ─────────────────────────────────────────────────
+    let update_content = {
+        use crate::state::UpdateStatus;
+        let mut col = column![
+            text("Updates").font(ctx.font_rounded).size(theme::TEXT_TITLE).style(p.text_primary),
+            Space::with_height(12),
+        ].spacing(8);
+
+        match &state.update_status {
+            UpdateStatus::Idle => {
+                col = col.push(
+                    button(
+                        text("Check for Updates").font(ctx.font_text).style(p.text_primary)
+                    )
+                    .on_press(on_check_update)
+                    .padding([12, 20])
+                    .style(iced::theme::Button::Custom(Box::new(PrimaryBtnStyle(p.elevated, p.highlight))))
+                );
+            }
+            UpdateStatus::Checking => {
+                col = col.push(
+                    text("Checking for updates...").font(ctx.font_text).size(theme::TEXT_BODY).style(p.text_muted)
+                );
+            }
+            UpdateStatus::Available { version, url } => {
+                col = col.push(
+                    text(format!("Update available: v{}", version))
+                        .font(ctx.font_text)
+                        .size(theme::TEXT_BODY)
+                        .style(accent)
+                );
+                col = col.push(Space::with_height(8));
+                col = col.push(
+                    button(
+                        text("Download & Install").font(ctx.font_text).style(p.text_primary)
+                    )
+                    .on_press(on_download_update(url.clone()))
+                    .padding([12, 20])
+                    .style(iced::theme::Button::Custom(Box::new(AccentBtnStyle(accent))))
+                );
+            }
+            UpdateStatus::Downloading => {
+                col = col.push(
+                    text("Downloading update...").font(ctx.font_text).size(theme::TEXT_BODY).style(accent)
+                );
+                col = col.push(
+                    progress_bar(0.0..=1.0, 0.5)
+                        .height(Length::Fixed(6.0))
+                        .style(iced::theme::ProgressBar::Custom(Box::new(ProgressStyle(accent, p.surface))))
+                );
+            }
+            UpdateStatus::Ready => {
+                col = col.push(
+                    text("✓ Update installed! Restart Musico to apply.")
+                        .font(ctx.font_text)
+                        .size(theme::TEXT_BODY)
+                        .style(Color::from_rgb8(158, 206, 106)) // green
+                );
+            }
+            UpdateStatus::Error(msg) => {
+                col = col.push(
+                    text(msg)
+                        .font(ctx.font_text)
+                        .size(theme::TEXT_CAPTION)
+                        .style(if msg.contains('✓') { Color::from_rgb8(158, 206, 106) } else { Color::from_rgb8(224, 108, 117) })
+                );
+            }
+        }
+        col
+    };
+
+    let update_section = container(update_content).padding(24).style(theme::glass_card).width(Length::Fill);
+    content = content.push(update_section);
+
     // About Section
+    let version = env!("CARGO_PKG_VERSION");
     let about_section = container(column![
         text("About").font(ctx.font_rounded).size(theme::TEXT_TITLE).style(p.text_primary),
         Space::with_height(12),
-        text("Musico v0.1.0").font(ctx.font_text).style(p.text_secondary),
+        text(format!("Musico v{}", version)).font(ctx.font_text).style(p.text_secondary),
         text("Powered by Iced 0.12, Symphonia, and pure Rust.").font(ctx.font_text).size(theme::TEXT_CAPTION).style(p.text_muted),
     ]).padding(24).style(theme::glass_card).width(Length::Fill);
 
@@ -356,6 +433,39 @@ impl iced::widget::button::StyleSheet for FontModeStyle {
                 color: if self.is_selected { self.accent } else { theme::with_alpha(self.accent, 0.3) },
                 width: 1.5,
                 radius: 50.0.into(),
+            },
+            ..Default::default()
+        }
+    }
+}
+
+struct AccentBtnStyle(Color);
+impl iced::widget::button::StyleSheet for AccentBtnStyle {
+    type Style = iced::Theme;
+    fn active(&self, _style: &Self::Style) -> iced::widget::button::Appearance {
+        iced::widget::button::Appearance {
+            background: Some(self.0.into()),
+            text_color: Color::WHITE,
+            border: iced::Border {
+                radius: theme::RADIUS_MD.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+    fn hovered(&self, _style: &Self::Style) -> iced::widget::button::Appearance {
+        let brighter = Color {
+            r: (self.0.r * 1.15).min(1.0),
+            g: (self.0.g * 1.15).min(1.0),
+            b: (self.0.b * 1.15).min(1.0),
+            a: self.0.a,
+        };
+        iced::widget::button::Appearance {
+            background: Some(brighter.into()),
+            text_color: Color::WHITE,
+            border: iced::Border {
+                radius: theme::RADIUS_MD.into(),
+                ..Default::default()
             },
             ..Default::default()
         }

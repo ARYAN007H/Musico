@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    name: Build Linux x86_64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev pkg-config libfontconfig1-dev libwayland-dev libxkbcommon-dev
+
+      - name: Build release binary
+        run: cargo build --release --bin musico_app
+
+      - name: Strip binary
+        run: strip target/release/musico_app
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp target/release/musico_app dist/musico-linux-x86_64
+          chmod +x dist/musico-linux-x86_64
+          cd dist && tar czf musico-linux-x86_64.tar.gz musico-linux-x86_64
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/musico-linux-x86_64
+            dist/musico-linux-x86_64.tar.gz
+          generate_release_notes: true
+          draft: false
+          prerelease: false

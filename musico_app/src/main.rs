@@ -5,6 +5,7 @@ mod icons;
 mod scanner;
 mod state;
 mod theme;
+mod updater;
 mod views;
 
 use iced::{Application, Settings};

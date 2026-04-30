@@ -70,10 +70,10 @@ fn nav_item<'a>(
         if is_active {
             // Active item: accent left bar + tinted bg
             row![
-                container(Space::new(Length::Fixed(3.0), Length::Fill))
+                container(Space::new(Length::Fixed(3.0), Length::Fixed(32.0)))
                     .style(iced::theme::Container::Custom(Box::new(AccentBarStyle(accent)))),
                 container(content).width(Length::Fill),
-            ].into()
+            ].align_items(Alignment::Center).into()
         } else {
             content.into()
         }

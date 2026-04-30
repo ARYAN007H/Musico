@@ -53,12 +53,22 @@ pub enum Message {
     ToggleShuffle,
     ToggleRepeat,
 
+    // Actions
+    ToggleLike,
+
     // Settings
     PickFolder,
     MusicFolderChanged(PathBuf),
     ArtColorExtracted(Color),
     SetPalette(ColorPalette),
     SetFontMode(FontMode),
+
+    // Auto-update
+    CheckForUpdate,
+    UpdateAvailable(String, String), // (version, download_url)
+    DownloadUpdate(String),          // download_url
+    UpdateDownloaded,
+    UpdateError(String),
 
     // Window
     WindowResized(f32, f32),
@@ -231,6 +241,8 @@ impl Application for Musico {
                 match ev {
                     PlaybackEvent::Playing(song) => {
                         self.0.playback_status = PlaybackStatus::Playing;
+                        self.0.duration_secs = song.duration_secs;
+                        self.0.position_secs = 0.0;
                         self.0.current_song = Some(song.clone());
                         
                         if let Some(art_bytes) = &song.cover_art {
@@ -422,6 +434,50 @@ impl Application for Musico {
                 self.save_config();
             }
 
+            // ── Actions ───────────────────────────────────────────────
+            Message::ToggleLike => {
+                // Toggle liked status — for now just log, future: persist in recommender
+                if let Some(song) = &self.0.current_song {
+                    self.0.is_liked = !self.0.is_liked;
+                    log::info!("Toggled like for: {} → {}", song.title, self.0.is_liked);
+                }
+            }
+
+            // ── Auto-Update ───────────────────────────────────────────
+            Message::CheckForUpdate => {
+                self.0.update_status = crate::state::UpdateStatus::Checking;
+                return Command::perform(
+                    crate::updater::check_for_update(),
+                    |result| match result {
+                        Ok(Some((version, url))) => Message::UpdateAvailable(version, url),
+                        Ok(None) => Message::UpdateError("You're on the latest version ✓".into()),
+                        Err(e) => Message::UpdateError(format!("{e}")),
+                    },
+                );
+            }
+            Message::UpdateAvailable(version, url) => {
+                self.0.update_status = crate::state::UpdateStatus::Available {
+                    version: version.clone(),
+                    url: url.clone(),
+                };
+            }
+            Message::DownloadUpdate(url) => {
+                self.0.update_status = crate::state::UpdateStatus::Downloading;
+                return Command::perform(
+                    crate::updater::download_and_install(url),
+                    |result| match result {
+                        Ok(()) => Message::UpdateDownloaded,
+                        Err(e) => Message::UpdateError(format!("{e}")),
+                    },
+                );
+            }
+            Message::UpdateDownloaded => {
+                self.0.update_status = crate::state::UpdateStatus::Ready;
+            }
+            Message::UpdateError(msg) => {
+                self.0.update_status = crate::state::UpdateStatus::Error(msg);
+            }
+
             // ── Window ────────────────────────────────────────────────
             Message::WindowResized(w, h) => {
                 self.0.window_width = w;
@@ -522,6 +578,8 @@ impl Musico {
                 Message::Next,
                 Message::Seek,
                 Message::SetVolume,
+                Message::ToggleLike,
+                Message::AddToQueue,
                 Message::PlaySong,
                 Message::AddToQueue,
                 Message::ToggleShuffle,
@@ -548,6 +606,8 @@ impl Musico {
                 Message::ScanLibrary,
                 |p| Message::SetPalette(p),
                 |m| Message::SetFontMode(m),
+                Message::CheckForUpdate,
+                |url| Message::DownloadUpdate(url),
             ),
         }
     }

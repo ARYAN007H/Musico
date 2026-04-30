@@ -24,6 +24,8 @@ pub fn now_playing<'a, Message: 'a + Clone>(
     on_next: Message,
     on_seek: impl Fn(f32) -> Message + 'a,
     on_set_volume: impl Fn(f32) -> Message + 'a,
+    on_toggle_like: Message,
+    on_add_to_queue: impl Fn(SongRecord) -> Message,
     on_play_recommendation: impl Fn(SongRecord) -> Message,
     on_queue_recommendation: impl Fn(SongRecord) -> Message,
     on_toggle_shuffle: Message,
@@ -78,13 +80,28 @@ pub fn now_playing<'a, Message: 'a + Clone>(
         text(artist_text).font(ctx.font_text).size(16.0).style(p.text_muted)
     ].spacing(6).align_items(Alignment::Center);
 
+    let heart_color = if state.is_liked { accent } else { p.text_muted };
+
+    let more_msg = {
+        let song = state.current_song.as_ref().unwrap();
+        state.library.iter()
+            .find(|r| r.id == song.id)
+            .map(|r| on_add_to_queue(r.clone()))
+    };
+
+    let mut more_btn = button(svg_icon(icons::MORE, 20, p.text_muted))
+        .style(iced::theme::Button::Custom(Box::new(theme::AccentTransportButton(accent))))
+        .padding(12);
+    if let Some(msg) = more_msg {
+        more_btn = more_btn.on_press(msg);
+    }
+
     let actions_row = row![
-        button(svg_icon(icons::HEART, 20, p.text_muted))
+        button(svg_icon(icons::HEART, 20, heart_color))
+            .on_press(on_toggle_like.clone())
             .style(iced::theme::Button::Custom(Box::new(theme::AccentTransportButton(accent))))
             .padding(12),
-        button(svg_icon(icons::MORE, 20, p.text_muted))
-            .style(iced::theme::Button::Custom(Box::new(theme::AccentTransportButton(accent))))
-            .padding(12),
+        more_btn,
     ].spacing(12);
 
     let meta_row = column![
