@@ -10,7 +10,7 @@ use musico_playback::{PlaybackEngine, PlaybackEvent, PlaybackStatus, SongInfo};
 use musico_playback::eq;
 use musico_recommender::{MusicRecommender, SongRecord, RecommendedSong, ListeningStats};
 
-use crate::state::{AppState, View, LibraryViewMode, ShuffleMode, RepeatMode, NormalizationMode};
+use crate::state::{AppState, View, LibraryViewMode, ShuffleMode, RepeatMode, NormalizationMode, SortField};
 use crate::theme::{self, ColorPalette, FontMode, Palette};
 use crate::scanner;
 use crate::config::AppConfig;
@@ -113,6 +113,17 @@ pub enum Message {
     ToggleCrossfade,
     SetCrossfadeDuration(f32),
     SetCrossfadeCurve(String),
+
+    // ── Plan 4: Playlists ───────────────────────────────────────────
+    PlaylistsLoaded(Vec<musico_recommender::SmartPlaylist>),
+    SelectPlaylist(usize),
+    CreatePlaylist,
+    DeletePlaylist(usize),
+    ExportPlaylist(usize),
+
+    // ── Plan 5: Library Sort ────────────────────────────────────────
+    SetSortField(SortField),
+    ToggleSortOrder,
 }
 
 impl std::fmt::Debug for Message {
@@ -438,6 +449,29 @@ impl Application for Musico {
                                 }).await.unwrap_or_default()
                             },
                             Message::StatsLoaded,
+                        );
+                    }
+                }
+                // Auto-load playlists on first visit.
+                if view == View::Playlists && self.0.playlists.is_empty() {
+                    if let Some(rec) = &self.0.recommender {
+                        let rec_clone = rec.clone();
+                        return Command::perform(
+                            async move {
+                                tokio::task::spawn_blocking(move || {
+                                    let guard = rec_clone.lock().unwrap();
+                                    let mut pls = guard.get_playlists().unwrap_or_default();
+                                    if pls.is_empty() {
+                                        // Seed with built-in presets.
+                                        pls = musico_recommender::playlists::builtin_playlists();
+                                        for pl in &pls {
+                                            let _ = guard.save_playlist(pl);
+                                        }
+                                    }
+                                    pls
+                                }).await.unwrap_or_default()
+                            },
+                            Message::PlaylistsLoaded,
                         );
                     }
                 }
@@ -770,6 +804,64 @@ impl Application for Musico {
                 self.sync_crossfade();
                 self.save_config();
             }
+
+            // ── Plan 4: Playlists ────────────────────────────────────
+            Message::PlaylistsLoaded(playlists) => {
+                self.0.playlists = playlists;
+            }
+            Message::SelectPlaylist(idx) => {
+                if self.0.active_playlist_idx == Some(idx) {
+                    self.0.active_playlist_idx = None; // toggle collapse
+                } else {
+                    self.0.active_playlist_idx = Some(idx);
+                }
+            }
+            Message::CreatePlaylist => {
+                let pl = musico_recommender::SmartPlaylist::new("New Playlist");
+                if let Some(rec) = &self.0.recommender {
+                    let guard = rec.lock().unwrap();
+                    let _ = guard.save_playlist(&pl);
+                }
+                self.0.playlists.push(pl);
+                self.0.active_playlist_idx = Some(self.0.playlists.len() - 1);
+            }
+            Message::DeletePlaylist(idx) => {
+                if idx < self.0.playlists.len() {
+                    let pl = self.0.playlists.remove(idx);
+                    if let Some(rec) = &self.0.recommender {
+                        let guard = rec.lock().unwrap();
+                        let _ = guard.delete_playlist(&pl.id);
+                    }
+                    self.0.active_playlist_idx = None;
+                }
+            }
+            Message::ExportPlaylist(idx) => {
+                if let Some(pl) = self.0.playlists.get(idx) {
+                    let resolved = pl.resolve(&self.0.library);
+                    let m3u = pl.to_m3u(&resolved);
+                    // Write to file next to the music folder.
+                    if let Some(folder) = &self.0.music_folder {
+                        let path = folder.join(format!("{}.m3u", pl.name));
+                        let _ = std::fs::write(&path, &m3u);
+                        log::info!("Exported playlist to {}", path.display());
+                    }
+                }
+            }
+
+            // ── Plan 5: Library Sort ─────────────────────────────────
+            Message::SetSortField(field) => {
+                if self.0.sort_field == field {
+                    self.0.sort_ascending = !self.0.sort_ascending;
+                } else {
+                    self.0.sort_field = field;
+                    self.0.sort_ascending = true;
+                }
+                self.sort_library();
+            }
+            Message::ToggleSortOrder => {
+                self.0.sort_ascending = !self.0.sort_ascending;
+                self.sort_library();
+            }
         }
         Command::none()
     }
@@ -827,7 +919,18 @@ impl Application for Musico {
             Layout::Wide => self.view_wide(),
         };
 
-        container(content)
+        // Show mini-player bar at bottom when not on NowPlaying.
+        let full_content = if self.0.active_view != View::NowPlaying {
+            if let Some(mini) = crate::components::mini_player::mini_player_bar(&self.0) {
+                iced::widget::column![content, mini].spacing(0).into()
+            } else {
+                content
+            }
+        } else {
+            content
+        };
+
+        container(full_content)
             .width(Length::Fill)
             .height(Length::Fill)
             .padding(12)
@@ -889,6 +992,7 @@ impl Musico {
                 Message::PlaySong,
                 Message::AddToQueue,
             ),
+            View::Playlists => crate::views::playlists::playlists_view(&self.0),
             View::Settings => {
                 let general = settings(
                     &self.0,
@@ -1114,6 +1218,23 @@ impl Musico {
         if let Some(engine) = &self.0.playback {
             let _ = engine.set_crossfade(self.0.crossfade_config);
         }
+    }
+
+    /// Sort the library (and filtered_library) by current sort field.
+    fn sort_library(&mut self) {
+        let asc = self.0.sort_ascending;
+        let sort_fn = |a: &SongRecord, b: &SongRecord| -> std::cmp::Ordering {
+            let cmp = match self.0.sort_field {
+                SortField::Title => a.title.to_lowercase().cmp(&b.title.to_lowercase()),
+                SortField::Artist => a.artist.to_lowercase().cmp(&b.artist.to_lowercase()),
+                SortField::Album => a.album.to_lowercase().cmp(&b.album.to_lowercase()),
+                SortField::Duration => a.duration_secs.cmp(&b.duration_secs),
+                SortField::DateAdded => a.id.cmp(&b.id), // ID is UUID so chronological enough
+            };
+            if asc { cmp } else { cmp.reverse() }
+        };
+        self.0.library.sort_by(sort_fn);
+        self.0.filtered_library.sort_by(sort_fn);
     }
 
     /// Update MPRIS metadata from current state.

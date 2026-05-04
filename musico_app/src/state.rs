@@ -14,6 +14,7 @@ pub enum View {
     NowPlaying,
     Library,
     Queue,
+    Playlists,
     Settings,
     Stats,
 }
@@ -165,6 +166,10 @@ pub struct AppState {
     // Crossfade (Plan 1)
     pub crossfade_config: musico_playback::CrossfadeConfig,
 
+    // Playlists (Plan 4)
+    pub playlists: Vec<musico_recommender::SmartPlaylist>,
+    pub active_playlist_idx: Option<usize>,
+
     // Recommender (owned via Arc/Mutex for shared access if needed)
     pub recommender: Option<Arc<Mutex<MusicRecommender>>>,
     pub playback: Option<Arc<PlaybackEngine>>,
@@ -256,6 +261,10 @@ impl AppState {
                 duration_secs: config.crossfade_duration,
                 curve: musico_playback::CrossfadeCurve::from_id(&config.crossfade_curve),
             },
+
+            // Playlists
+            playlists: Vec::new(),
+            active_playlist_idx: None,
 
             recommender: None,
             playback: None,

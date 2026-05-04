@@ -1,11 +1,12 @@
 use iced::widget::{button, column, container, row, text, text_input, scrollable, Space};
 use iced::{Alignment, Element, Length, Color};
-use crate::state::{AppState, LibraryViewMode};
+use crate::state::{AppState, LibraryViewMode, SortField};
 use crate::theme::{self, Palette};
 use crate::components::song_row::song_row;
+use crate::app::Message;
 use musico_recommender::SongRecord;
 
-pub fn library<'a, Message: 'a + Clone>(
+pub fn library<'a>(
     state: &AppState,
     on_search: impl Fn(String) -> Message + 'a,
     on_clear_search: Message,
@@ -80,6 +81,46 @@ pub fn library<'a, Message: 'a + Clone>(
     .width(Length::Fill)
     .padding([20, 40]);
 
+    // ── Sort Controls ──────────────────────────────────────────────────────
+    let sort_fields = [
+        (SortField::Title, "Title"),
+        (SortField::Artist, "Artist"),
+        (SortField::Album, "Album"),
+        (SortField::Duration, "Duration"),
+    ];
+
+    let mut sort_row = row![
+        text("Sort by").font(ctx.font_text).size(theme::TEXT_CAPTION).style(p.text_muted),
+        Space::with_width(8),
+    ].spacing(4).align_items(Alignment::Center);
+
+    for (field, label) in &sort_fields {
+        let is_active = state.sort_field == *field;
+        let arrow = if is_active {
+            if state.sort_ascending { " ↑" } else { " ↓" }
+        } else { "" };
+
+        sort_row = sort_row.push(
+            button(
+                text(format!("{}{}", label, arrow))
+                    .font(ctx.font_text)
+                    .size(11.0)
+                    .style(if is_active { accent } else { p.text_secondary })
+            )
+            .on_press(Message::SetSortField(*field))
+            .padding([4, 10])
+            .style(iced::theme::Button::Custom(Box::new(SortPillStyle {
+                active: is_active,
+                accent,
+                bg: p.elevated,
+            })))
+        );
+    }
+
+    let sort_container = container(sort_row)
+        .width(Length::Fill)
+        .padding([0, 40, 8, 40]);
+
     // Content
     let content: Element<'a, Message> = if songs.is_empty() {
         container(
@@ -147,7 +188,7 @@ pub fn library<'a, Message: 'a + Clone>(
         }
     };
 
-    column![header, content].into()
+    column![header, sort_container, content].into()
 }
 
 fn grid_card<'a, Message: 'a + Clone>(
@@ -306,6 +347,37 @@ impl iced::widget::button::StyleSheet for GridCardStyle {
                 color: iced::Color { a: 0.2, ..theme::BASE },
                 offset: iced::Vector { x: 0.0, y: 4.0 },
                 blur_radius: 12.0,
+            },
+            ..Default::default()
+        }
+    }
+}
+
+struct SortPillStyle { active: bool, accent: Color, bg: Color }
+impl iced::widget::button::StyleSheet for SortPillStyle {
+    type Style = iced::Theme;
+    fn active(&self, _: &Self::Style) -> iced::widget::button::Appearance {
+        iced::widget::button::Appearance {
+            background: Some(if self.active {
+                theme::with_alpha(self.accent, 0.12).into()
+            } else {
+                self.bg.into()
+            }),
+            border: iced::Border {
+                color: if self.active { theme::with_alpha(self.accent, 0.3) } else { Color::TRANSPARENT },
+                width: if self.active { 1.0 } else { 0.0 },
+                radius: 50.0.into(),
+            },
+            ..Default::default()
+        }
+    }
+    fn hovered(&self, _: &Self::Style) -> iced::widget::button::Appearance {
+        iced::widget::button::Appearance {
+            background: Some(theme::with_alpha(self.accent, 0.15).into()),
+            border: iced::Border {
+                color: theme::with_alpha(self.accent, 0.3),
+                width: 1.0,
+                radius: 50.0.into(),
             },
             ..Default::default()
         }

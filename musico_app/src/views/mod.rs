@@ -3,6 +3,7 @@ pub mod library;
 pub mod queue;
 pub mod settings;
 pub mod stats;
+pub mod playlists;
 
 pub use now_playing::now_playing;
 pub use library::library;
