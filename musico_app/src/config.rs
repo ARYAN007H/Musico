@@ -20,10 +20,37 @@ pub struct AppConfig {
     // Legacy field — kept for backward compat on load
     #[serde(default)]
     pub accent_color_hex: String,
+
+    // ── New settings ─────────────────────────────────────────────
+    /// EQ enabled state.
+    #[serde(default)]
+    pub eq_enabled: bool,
+    /// Active EQ preset ID.
+    #[serde(default = "default_eq_preset")]
+    pub eq_preset_id: String,
+    /// Normalization mode: "off", "track", or "album".
+    #[serde(default = "default_norm_mode")]
+    pub normalization_mode: String,
+    /// Last-used sleep timer duration in minutes (0 = none).
+    #[serde(default)]
+    pub last_sleep_timer_mins: u64,
+    /// Crossfade enabled.
+    #[serde(default)]
+    pub crossfade_enabled: bool,
+    /// Crossfade duration in seconds.
+    #[serde(default = "default_crossfade_duration")]
+    pub crossfade_duration: f32,
+    /// Crossfade curve: "linear", "equal_power", "overlap".
+    #[serde(default = "default_crossfade_curve")]
+    pub crossfade_curve: String,
 }
 
 fn default_palette_id() -> String { "nebula".to_string() }
 fn default_font_mode() -> String { "classic".to_string() }
+fn default_eq_preset() -> String { "flat".to_string() }
+fn default_norm_mode() -> String { "off".to_string() }
+fn default_crossfade_duration() -> f32 { 3.0 }
+fn default_crossfade_curve() -> String { "equal_power".to_string() }
 
 impl Default for AppConfig {
     fn default() -> Self {
@@ -34,6 +61,13 @@ impl Default for AppConfig {
             volume: 1.0,
             library_view_mode: "grid".to_string(),
             accent_color_hex: String::new(),
+            eq_enabled: false,
+            eq_preset_id: "flat".to_string(),
+            normalization_mode: "off".to_string(),
+            last_sleep_timer_mins: 0,
+            crossfade_enabled: false,
+            crossfade_duration: 3.0,
+            crossfade_curve: "equal_power".to_string(),
         }
     }
 }
@@ -65,6 +99,12 @@ impl AppConfig {
                 }
                 if config.font_mode.is_empty() {
                     config.font_mode = "classic".to_string();
+                }
+                if config.eq_preset_id.is_empty() {
+                    config.eq_preset_id = "flat".to_string();
+                }
+                if config.normalization_mode.is_empty() {
+                    config.normalization_mode = "off".to_string();
                 }
                 config
             }

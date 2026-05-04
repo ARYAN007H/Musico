@@ -61,6 +61,7 @@ pub(crate) fn index_song(store: &Store, path: &str) -> Result<SongRecord, Recomm
         duration_secs: result.duration_secs,
         feature_vector: result.feature_vector,
         indexed_at: Utc::now(),
+        replay_gain_db: result.rms_db,
     };
 
     let value = bincode::serialize(&record).map_err(|e| {
@@ -111,6 +112,7 @@ pub(crate) fn index_song_no_flush(store: &Store, path: &str) -> Result<SongRecor
         duration_secs: result.duration_secs,
         feature_vector: result.feature_vector,
         indexed_at: Utc::now(),
+        replay_gain_db: result.rms_db,
     };
 
     let value = bincode::serialize(&record).map_err(|e| {

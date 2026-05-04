@@ -236,7 +236,14 @@ pub(crate) fn analyze_file(path: &str) -> Result<AnalysisResult, RecommenderErro
     };
     normalise_feature_vector(&mut fv);
 
-    Ok(AnalysisResult { feature_vector: fv, duration_secs, title, artist, album })
+    // Compute RMS in dB for ReplayGain normalization.
+    let rms_db = if rms_energy > 1e-10 {
+        20.0 * rms_energy.log10()
+    } else {
+        -96.0 // silence floor
+    };
+
+    Ok(AnalysisResult { feature_vector: fv, duration_secs, title, artist, album, rms_db })
 }
 
 // ---------------------------------------------------------------------------

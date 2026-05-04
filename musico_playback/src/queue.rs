@@ -102,6 +102,11 @@ impl PlaybackQueue {
         songs.shuffle(&mut rng);
         self.songs = songs.into();
     }
+
+    /// Peek at the next song without removing it. Used for gapless preloading.
+    pub fn peek_next(&self) -> Option<SongInfo> {
+        self.songs.front().cloned()
+    }
 }
 
 impl Default for PlaybackQueue {

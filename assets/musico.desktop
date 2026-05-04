@@ -2,7 +2,7 @@
 Name=Musico
 Comment=Blazing-fast offline music player
 GenericName=Music Player
-Exec=musico
+Exec=/home/aryan/.local/bin/musico
 Icon=musico
 Terminal=false
 Type=Application

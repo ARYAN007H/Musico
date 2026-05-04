@@ -159,13 +159,20 @@ fn grid_card<'a, Message: 'a + Clone>(
 ) -> Element<'a, Message> {
     let p = Palette::default_palette();
 
-    let art_placeholder = container(Space::new(Length::Fixed(art_size), Length::Fixed(art_size)))
-        .width(Length::Fixed(art_size))
-        .height(Length::Fixed(art_size))
-        .style(iced::theme::Container::Custom(Box::new(GridArtStyle {
-            radius: ctx.radius_md,
-            bg: p.surface,
-        })));
+    let art_placeholder = container(
+        iced::widget::svg(iced::widget::svg::Handle::from_memory(crate::icons::LIBRARY))
+            .width(Length::Fixed(art_size * 0.3))
+            .height(Length::Fixed(art_size * 0.3))
+            .style(iced::theme::Svg::Custom(Box::new(crate::theme::SvgStyle(theme::with_alpha(accent, 0.4)))))
+    )
+    .width(Length::Fixed(art_size))
+    .height(Length::Fixed(art_size))
+    .center_x()
+    .center_y()
+    .style(iced::theme::Container::Custom(Box::new(GridArtStyle {
+        radius: ctx.radius_md,
+        bg: theme::with_alpha(p.elevated, 0.5),
+    })));
 
     let title = text(&song.title).font(ctx.font_text).size(theme::TEXT_BODY).style(p.text_primary);
     let artist = text(&song.artist).font(ctx.font_text).size(theme::TEXT_CAPTION).style(p.text_muted);

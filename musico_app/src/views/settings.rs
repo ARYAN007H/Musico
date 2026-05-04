@@ -277,6 +277,252 @@ pub fn settings<'a, Message: 'a + Clone>(
     ).width(Length::Fill).height(Length::Fill).into()
 }
 
+/// Builds the EQ + Audio settings section with concrete Message type.
+/// Call this separately and push into a column alongside the generic settings.
+pub fn audio_settings<'a>(state: &'a AppState) -> iced::Element<'a, crate::app::Message> {
+    use crate::app::Message;
+    use crate::state::NormalizationMode;
+    use musico_playback::eq::{ALL_PRESETS, BAND_LABELS};
+
+    let p = Palette::from_color_palette(&state.color_palette);
+    let ctx = state.theme_ctx();
+    let accent = state.art_tint;
+
+    let mut content = column![].spacing(20);
+
+    // ─── Equalizer Section ────────────────────────────────────────────────────
+    let eq_status = if state.eq_enabled { "On" } else { "Off" };
+    let mut eq_section = column![
+        row![
+            text("Equalizer").font(ctx.font_rounded).size(theme::TEXT_TITLE).style(p.text_primary),
+            Space::with_width(Length::Fill),
+            button(
+                text(eq_status).font(ctx.font_text).size(theme::TEXT_CAPTION)
+                    .style(if state.eq_enabled { accent } else { p.text_muted })
+            )
+            .on_press(Message::ToggleEQ)
+            .padding([6, 14])
+            .style(iced::theme::Button::Custom(Box::new(PillToggleStyle {
+                active: state.eq_enabled,
+                accent,
+                bg: p.elevated,
+            }))),
+        ].align_items(Alignment::Center),
+        Space::with_height(12),
+    ].spacing(4);
+
+    // EQ Preset pills.
+    let mut preset_row = row![].spacing(8);
+    for preset in ALL_PRESETS.iter() {
+        let is_selected = state.eq_preset_id == preset.id;
+        let preset_id = preset.id.to_string();
+        preset_row = preset_row.push(
+            button(
+                text(preset.name).font(ctx.font_text).size(11.0)
+                    .style(if is_selected { accent } else { p.text_secondary })
+            )
+            .on_press(Message::SetEQPreset(preset_id))
+            .padding([6, 12])
+            .style(iced::theme::Button::Custom(Box::new(PillToggleStyle {
+                active: is_selected,
+                accent,
+                bg: p.elevated,
+            })))
+        );
+    }
+    eq_section = eq_section.push(
+        iced::widget::scrollable(preset_row)
+            .direction(iced::widget::scrollable::Direction::Horizontal(
+                iced::widget::scrollable::Properties::default()
+            ))
+    );
+
+    // EQ Band labels row.
+    eq_section = eq_section.push(Space::with_height(8));
+    let mut band_labels = row![].spacing(4);
+    for (i, label) in BAND_LABELS.iter().enumerate() {
+        let gain = state.eq_gains[i];
+        let gain_text = format!("{:+.0}", gain);
+        band_labels = band_labels.push(
+            column![
+                text(*label).font(ctx.font_text).size(10.0).style(p.text_muted),
+                text(gain_text).font(ctx.font_rounded).size(11.0)
+                    .style(if gain.abs() > 0.5 { accent } else { p.text_secondary }),
+            ]
+            .align_items(Alignment::Center)
+            .width(Length::Fill)
+        );
+    }
+    eq_section = eq_section.push(band_labels);
+
+    content = content.push(
+        container(eq_section).padding(24).style(theme::glass_card).width(Length::Fill)
+    );
+
+    // ─── Normalization Section ────────────────────────────────────────────────
+    let mut norm_row = row![].spacing(8);
+    for mode in &[NormalizationMode::Off, NormalizationMode::Track, NormalizationMode::Album] {
+        let is_selected = state.normalization_mode == *mode;
+        let m = *mode;
+        norm_row = norm_row.push(
+            button(
+                text(mode.label()).font(ctx.font_text).size(13.0)
+                    .style(if is_selected { accent } else { p.text_secondary })
+            )
+            .on_press(Message::SetNormalizationMode(m))
+            .padding([8, 16])
+            .style(iced::theme::Button::Custom(Box::new(PillToggleStyle {
+                active: is_selected,
+                accent,
+                bg: p.elevated,
+            })))
+        );
+    }
+
+    let norm_section = container(column![
+        text("Audio Normalization").font(ctx.font_rounded).size(theme::TEXT_TITLE).style(p.text_primary),
+        Space::with_height(8),
+        text("Adjusts volume to match perceived loudness across tracks.")
+            .font(ctx.font_text).size(theme::TEXT_CAPTION).style(p.text_muted),
+        Space::with_height(12),
+        norm_row,
+    ]).padding(24).style(theme::glass_card).width(Length::Fill);
+
+    content = content.push(norm_section);
+
+    // ─── Sleep Timer Section ─────────────────────────────────────────────────
+    let mut timer_row = row![].spacing(8);
+    for &(mins, label) in crate::timer::TIMER_PRESETS {
+        let is_active = state.sleep_timer.as_ref()
+            .map(|t| t.total_minutes() == mins)
+            .unwrap_or(false);
+        timer_row = timer_row.push(
+            button(
+                text(label).font(ctx.font_text).size(12.0)
+                    .style(if is_active { accent } else { p.text_secondary })
+            )
+            .on_press(Message::SetSleepTimer(if is_active { 0 } else { mins }))
+            .padding([8, 14])
+            .style(iced::theme::Button::Custom(Box::new(PillToggleStyle {
+                active: is_active,
+                accent,
+                bg: p.elevated,
+            })))
+        );
+    }
+
+    let timer_status = if let Some(timer) = &state.sleep_timer {
+        format!("⏱ {} remaining", timer.remaining_display())
+    } else {
+        "No timer set".to_string()
+    };
+
+    let timer_section = container(column![
+        row![
+            text("Sleep Timer").font(ctx.font_rounded).size(theme::TEXT_TITLE).style(p.text_primary),
+            Space::with_width(Length::Fill),
+            text(timer_status).font(ctx.font_text).size(theme::TEXT_CAPTION).style(
+                if state.sleep_timer.is_some() { accent } else { p.text_muted }
+            ),
+        ].align_items(Alignment::Center),
+        Space::with_height(12),
+        timer_row,
+    ]).padding(24).style(theme::glass_card).width(Length::Fill);
+
+    content = content.push(timer_section);
+
+    // ─── Crossfade Section ───────────────────────────────────────────────────
+    use musico_playback::{CrossfadeCurve};
+
+    let cf = &state.crossfade_config;
+    let cf_status = if cf.enabled { "On" } else { "Off" };
+
+    let mut curve_row = row![].spacing(8);
+    for curve in &[CrossfadeCurve::Linear, CrossfadeCurve::EqualPower, CrossfadeCurve::Overlap] {
+        let is_selected = cf.curve == *curve;
+        let curve_id = curve.id().to_string();
+        curve_row = curve_row.push(
+            button(
+                text(curve.label()).font(ctx.font_text).size(12.0)
+                    .style(if is_selected { accent } else { p.text_secondary })
+            )
+            .on_press(Message::SetCrossfadeCurve(curve_id))
+            .padding([6, 12])
+            .style(iced::theme::Button::Custom(Box::new(PillToggleStyle {
+                active: is_selected,
+                accent,
+                bg: p.elevated,
+            })))
+        );
+    }
+
+    let cf_section = container(column![
+        row![
+            text("Crossfade").font(ctx.font_rounded).size(theme::TEXT_TITLE).style(p.text_primary),
+            Space::with_width(Length::Fill),
+            button(
+                text(cf_status).font(ctx.font_text).size(theme::TEXT_CAPTION)
+                    .style(if cf.enabled { accent } else { p.text_muted })
+            )
+            .on_press(Message::ToggleCrossfade)
+            .padding([6, 14])
+            .style(iced::theme::Button::Custom(Box::new(PillToggleStyle {
+                active: cf.enabled,
+                accent,
+                bg: p.elevated,
+            }))),
+        ].align_items(Alignment::Center),
+        Space::with_height(8),
+        text(format!("Duration: {:.1}s", cf.duration_secs))
+            .font(ctx.font_text).size(theme::TEXT_CAPTION).style(p.text_secondary),
+        iced::widget::slider(0.5..=10.0, cf.duration_secs, Message::SetCrossfadeDuration)
+            .width(Length::Fill)
+            .style(iced::theme::Slider::Custom(Box::new(theme::VolumeSliderStyle(accent)))),
+        Space::with_height(8),
+        text("Curve").font(ctx.font_text).size(theme::TEXT_CAPTION).style(p.text_muted),
+        curve_row,
+    ]).padding(24).style(theme::glass_card).width(Length::Fill);
+
+    content = content.push(cf_section);
+
+    content.into()
+}
+
+struct PillToggleStyle {
+    active: bool,
+    accent: Color,
+    bg: Color,
+}
+impl iced::widget::button::StyleSheet for PillToggleStyle {
+    type Style = iced::Theme;
+    fn active(&self, _: &Self::Style) -> iced::widget::button::Appearance {
+        iced::widget::button::Appearance {
+            background: Some(if self.active {
+                theme::with_alpha(self.accent, 0.15).into()
+            } else {
+                self.bg.into()
+            }),
+            border: iced::Border {
+                color: if self.active { self.accent } else { Color::TRANSPARENT },
+                width: if self.active { 1.5 } else { 0.0 },
+                radius: 50.0.into(),
+            },
+            ..Default::default()
+        }
+    }
+    fn hovered(&self, _: &Self::Style) -> iced::widget::button::Appearance {
+        iced::widget::button::Appearance {
+            background: Some(theme::with_alpha(self.accent, 0.1).into()),
+            border: iced::Border {
+                color: if self.active { self.accent } else { theme::with_alpha(self.accent, 0.3) },
+                width: 1.5,
+                radius: 50.0.into(),
+            },
+            ..Default::default()
+        }
+    }
+}
+
 fn shortcut_row<'a, Message: 'a>(key: &str, desc: &str, p: &Palette, ctx: &theme::ThemeCtx) -> Element<'a, Message> {
     row![
         container(text(key).font(ctx.font_rounded).size(theme::TEXT_CAPTION).style(p.text_primary))

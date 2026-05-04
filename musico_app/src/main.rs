@@ -2,9 +2,12 @@ mod app;
 mod components;
 mod config;
 mod icons;
+mod lyrics;
+mod mpris;
 mod scanner;
 mod state;
 mod theme;
+mod timer;
 mod updater;
 mod views;
 

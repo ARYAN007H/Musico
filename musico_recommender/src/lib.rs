@@ -25,12 +25,16 @@ pub mod errors;
 pub(crate) mod extractor;
 pub mod history;
 pub mod models;
+pub mod playlists;
 pub mod recommender;
 pub mod session;
+pub mod stats;
 pub mod vector_store;
 
 pub use errors::RecommenderError;
 pub use models::*;
+pub use stats::ListeningStats;
+pub use playlists::SmartPlaylist;
 
 use chrono::Utc;
 use models::Store;
@@ -210,5 +214,25 @@ impl MusicRecommender {
     /// Returns a reference to the underlying sled database handle.
     pub fn db(&self) -> &sled::Db {
         &self.store.db
+    }
+
+    /// Compute listening statistics from the event history.
+    pub fn get_stats(&self) -> Result<ListeningStats, RecommenderError> {
+        stats::get_stats(&self.store)
+    }
+
+    /// Load all saved smart playlists.
+    pub fn get_playlists(&self) -> Result<Vec<SmartPlaylist>, RecommenderError> {
+        playlists::load_playlists(&self.store)
+    }
+
+    /// Save a smart playlist.
+    pub fn save_playlist(&self, playlist: &SmartPlaylist) -> Result<(), RecommenderError> {
+        playlists::save_playlist(&self.store, playlist)
+    }
+
+    /// Delete a smart playlist by ID.
+    pub fn delete_playlist(&self, playlist_id: &str) -> Result<(), RecommenderError> {
+        playlists::delete_playlist(&self.store, playlist_id)
     }
 }

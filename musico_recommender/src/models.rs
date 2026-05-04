@@ -124,6 +124,10 @@ pub struct SongRecord {
     pub duration_secs: u32,
     pub feature_vector: FeatureVector,
     pub indexed_at: DateTime<Utc>,
+    /// Track loudness in dB RMS, used for ReplayGain normalization.
+    /// Target: -18.0 dBFS. Gain = 10^((target - track_db) / 20).
+    #[serde(default)]
+    pub replay_gain_db: f32,
 }
 
 // ---------------------------------------------------------------------------
@@ -215,4 +219,6 @@ pub(crate) struct AnalysisResult {
     pub title: String,
     pub artist: String,
     pub album: String,
+    /// Track loudness in dB RMS for normalization.
+    pub rms_db: f32,
 }

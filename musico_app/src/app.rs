@@ -7,12 +7,16 @@ use iced::widget::{container, row};
 use iced::keyboard;
 
 use musico_playback::{PlaybackEngine, PlaybackEvent, PlaybackStatus, SongInfo};
-use musico_recommender::{MusicRecommender, SongRecord, RecommendedSong};
+use musico_playback::eq;
+use musico_recommender::{MusicRecommender, SongRecord, RecommendedSong, ListeningStats};
 
-use crate::state::{AppState, View, LibraryViewMode, ShuffleMode, RepeatMode};
+use crate::state::{AppState, View, LibraryViewMode, ShuffleMode, RepeatMode, NormalizationMode};
 use crate::theme::{self, ColorPalette, FontMode, Palette};
 use crate::scanner;
 use crate::config::AppConfig;
+use crate::timer::{SleepTimer, TimerStatus};
+use crate::lyrics::{self, Lyrics};
+use crate::mpris::{self, MprisCommand, MprisMetadata};
 
 use crate::views::{now_playing, library, queue, settings};
 use crate::components::sidebar;
@@ -80,6 +84,35 @@ pub enum Message {
 
     // Keyboard
     KeyPressed(keyboard::Key),
+
+    // ── Plan 2: EQ ──────────────────────────────────────────────────
+    SetEQPreset(String),
+    SetEQBand(usize, f32),
+    ToggleEQ,
+
+    // ── Plan 3: MPRIS ───────────────────────────────────────────────
+    MprisReady(std::sync::Arc<std::sync::Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<MprisCommand>>>>, mpris::MprisState),
+    MprisIncoming(MprisCommand),
+
+    // ── Plan 6: Lyrics ──────────────────────────────────────────────
+    LyricsLoaded(Lyrics),
+    ToggleLyrics,
+
+    // ── Plan 7: Normalization ───────────────────────────────────────
+    SetNormalizationMode(NormalizationMode),
+
+    // ── Plan 9: Stats ───────────────────────────────────────────────
+    StatsLoaded(ListeningStats),
+    RefreshStats,
+
+    // ── Plan 10: Sleep Timer ────────────────────────────────────────
+    SetSleepTimer(u64),   // minutes (0 = cancel)
+    SleepTimerExpired,
+
+    // ── Plan 1: Crossfade ───────────────────────────────────────────
+    ToggleCrossfade,
+    SetCrossfadeDuration(f32),
+    SetCrossfadeCurve(String),
 }
 
 impl std::fmt::Debug for Message {
@@ -121,7 +154,26 @@ impl Application for Musico {
             Message::PlaybackEngineReady,
         );
 
-        (Self(state), Command::batch(vec![init_recommender, init_playback]))
+        let init_mpris = Command::perform(
+            async {
+                match mpris::start_mpris_server().await {
+                    Ok((rx, state)) => Some((rx, state)),
+                    Err(e) => {
+                        log::warn!("MPRIS init failed (non-fatal): {e}");
+                        None
+                    }
+                }
+            },
+            |result| match result {
+                Some((rx, state)) => Message::MprisReady(
+                    std::sync::Arc::new(std::sync::Mutex::new(Some(rx))),
+                    state,
+                ),
+                None => Message::NavigateTo(View::NowPlaying),
+            },
+        );
+
+        (Self(state), Command::batch(vec![init_recommender, init_playback, init_mpris]))
     }
 
     fn title(&self) -> String {
@@ -165,11 +217,30 @@ impl Application for Musico {
                 if let Some(engine) = &self.0.playback {
                     let song_info = record_to_song_info(&record);
                     let _ = engine.play(song_info);
-                    
+
+                    // ── Load lyrics from sidecar .lrc file ──
+                    let file_path = record.file_path.clone();
+                    let lyrics_cmd = Command::perform(
+                        async move {
+                            tokio::task::spawn_blocking(move || {
+                                lyrics::load_sidecar_lrc(&file_path)
+                            }).await.unwrap_or(Lyrics::None)
+                        },
+                        Message::LyricsLoaded,
+                    );
+
+                    // ── Apply normalization gain ──
+                    if !matches!(self.0.normalization_mode, NormalizationMode::Off) {
+                        self.apply_normalization();
+                    }
+
+                    // ── Update MPRIS ──
+                    self.update_mpris();
+
                     if let Some(rec) = &self.0.recommender {
                         let rec_clone = rec.clone();
                         let current_id = record.id.clone();
-                        return Command::perform(
+                        let recs_cmd = Command::perform(
                             async move {
                                 tokio::task::spawn_blocking(move || {
                                     let mut guard = rec_clone.lock().unwrap();
@@ -179,7 +250,9 @@ impl Application for Musico {
                             },
                             Message::RecommendationsUpdated,
                         );
+                        return Command::batch(vec![lyrics_cmd, recs_cmd]);
                     }
+                    return lyrics_cmd;
                 }
             }
             Message::Pause => {
@@ -235,6 +308,35 @@ impl Application for Musico {
                         cmds.push(Command::perform(async move { prog }, |p| Message::IndexProgress(p.0, p.1)));
                     }
                 }
+
+                // ── Sleep Timer tick ──
+                if let Some(timer) = &self.0.sleep_timer {
+                    match timer.tick() {
+                        TimerStatus::Active { .. } => {}
+                        TimerStatus::Fading { volume_factor, .. } => {
+                            self.0.sleep_timer_volume_factor = volume_factor;
+                            // Modulate the actual volume.
+                            let effective = self.0.volume * volume_factor;
+                            if let Some(engine) = &self.0.playback {
+                                let _ = engine.set_volume(effective);
+                            }
+                        }
+                        TimerStatus::Expired => {
+                            cmds.push(Command::perform(async {}, |_| Message::SleepTimerExpired));
+                        }
+                    }
+                }
+
+                // ── MPRIS D-Bus command polling ──
+                if let Some(rx) = &mut self.0.mpris_rx {
+                    while let Ok(cmd) = rx.try_recv() {
+                        cmds.push(Command::perform(async { cmd }, Message::MprisIncoming));
+                    }
+                }
+
+                // ── Update MPRIS metadata (every tick) ──
+                self.update_mpris();
+
                 return Command::batch(cmds);
             }
             Message::PlaybackEvent(ev) => {
@@ -246,19 +348,28 @@ impl Application for Musico {
                         self.0.current_song = Some(song.clone());
                         
                         if let Some(art_bytes) = &song.cover_art {
+                            self.0.cached_art_handle = Some(iced::widget::image::Handle::from_memory(art_bytes.clone()));
                             let bytes_clone = art_bytes.clone();
                             return Command::perform(
                                 async move {
                                     if let Ok(img) = image::load_from_memory(&bytes_clone) {
                                         crate::components::art_canvas::extract_dominant_color(&img)
                                     } else {
-                                        Palette::default_palette().accent
+                                        crate::theme::Palette::default_palette().accent
                                     }
                                 },
                                 Message::ArtColorExtracted
                             );
                         } else {
+                            self.0.cached_art_handle = None;
                             self.0.art_tint = self.0.color_palette.primary;
+                        }
+
+                        // ── Preload next track for gapless transition ──
+                        if let Some(engine) = &self.0.playback {
+                            if let Some(next_song) = self.0.queue.peek_next() {
+                                let _ = engine.preload_next(next_song);
+                            }
                         }
                     }
                     PlaybackEvent::Paused { position_secs } => {
@@ -271,6 +382,7 @@ impl Application for Musico {
                     PlaybackEvent::Stopped => {
                         self.0.playback_status = PlaybackStatus::Stopped;
                         self.0.current_song = None;
+                        self.0.cached_art_handle = None;
                         self.0.position_secs = 0.0;
                     }
                     PlaybackEvent::PositionUpdate { position_secs, listened_secs } => {
@@ -313,6 +425,22 @@ impl Application for Musico {
             // ── Navigation ────────────────────────────────────────────
             Message::NavigateTo(view) => {
                 self.0.active_view = view;
+                // Auto-load stats on first visit to Stats view.
+                if view == View::Stats && self.0.stats.is_none() && !self.0.stats_loading {
+                    if let Some(rec) = &self.0.recommender {
+                        self.0.stats_loading = true;
+                        let rec_clone = rec.clone();
+                        return Command::perform(
+                            async move {
+                                tokio::task::spawn_blocking(move || {
+                                    let guard = rec_clone.lock().unwrap();
+                                    guard.get_stats().unwrap_or_default()
+                                }).await.unwrap_or_default()
+                            },
+                            Message::StatsLoaded,
+                        );
+                    }
+                }
             }
 
             // ── Library ───────────────────────────────────────────────
@@ -488,6 +616,160 @@ impl Application for Musico {
             Message::KeyPressed(key) => {
                 return self.handle_key(key);
             }
+
+            // ── Plan 2: EQ ───────────────────────────────────────────
+            Message::ToggleEQ => {
+                self.0.eq_enabled = !self.0.eq_enabled;
+                if let Some(engine) = &self.0.playback {
+                    let _ = engine.set_eq(self.0.eq_enabled, self.0.eq_gains);
+                }
+                self.save_config();
+            }
+            Message::SetEQPreset(preset_id) => {
+                let preset = eq::preset_by_id(&preset_id);
+                self.0.eq_preset_id = preset_id;
+                self.0.eq_gains = preset.gains;
+                self.0.eq_enabled = preset.id != "flat";
+                if let Some(engine) = &self.0.playback {
+                    let _ = engine.set_eq(self.0.eq_enabled, self.0.eq_gains);
+                }
+                self.save_config();
+            }
+            Message::SetEQBand(band_idx, gain_db) => {
+                if band_idx < 10 {
+                    self.0.eq_gains[band_idx] = gain_db.clamp(-12.0, 12.0);
+                    self.0.eq_preset_id = "custom".to_string();
+                    if let Some(engine) = &self.0.playback {
+                        let _ = engine.set_eq(self.0.eq_enabled, self.0.eq_gains);
+                    }
+                }
+            }
+
+            // ── Plan 3: MPRIS ────────────────────────────────────────
+            Message::MprisReady(rx_arc, state) => {
+                self.0.mpris_state = Some(state);
+                if let Ok(mut guard) = rx_arc.lock() {
+                    self.0.mpris_rx = guard.take();
+                }
+            }
+            Message::MprisIncoming(cmd) => {
+                match cmd {
+                    MprisCommand::PlayPause => {
+                        if matches!(self.0.playback_status, PlaybackStatus::Playing) {
+                            if let Some(engine) = &self.0.playback {
+                                let _ = engine.pause();
+                            }
+                        } else if matches!(self.0.playback_status, PlaybackStatus::Paused) {
+                            if let Some(engine) = &self.0.playback {
+                                let _ = engine.resume();
+                            }
+                        }
+                    }
+                    MprisCommand::Next => { self.play_next(); }
+                    MprisCommand::Previous => {
+                        if let Some(engine) = &self.0.playback {
+                            if let Some(prev) = self.0.queue.previous() {
+                                let _ = engine.play(prev.clone());
+                            }
+                        }
+                    }
+                    MprisCommand::Stop => {
+                        if let Some(engine) = &self.0.playback {
+                            let _ = engine.stop();
+                        }
+                    }
+                    MprisCommand::Seek(offset_us) => {
+                        let offset_secs = (offset_us / 1_000_000.0) as f32;
+                        let new_pos = (self.0.position_secs + offset_secs).max(0.0).min(self.0.duration_secs);
+                        if let Some(engine) = &self.0.playback {
+                            let _ = engine.seek(new_pos);
+                        }
+                    }
+                    MprisCommand::SetVolume(vol) => {
+                        let v = (vol as f32).clamp(0.0, 1.0);
+                        if let Some(engine) = &self.0.playback {
+                            let _ = engine.set_volume(v);
+                        }
+                        self.0.volume = v;
+                    }
+                }
+            }
+
+            // ── Plan 6: Lyrics ───────────────────────────────────────
+            Message::LyricsLoaded(lyr) => {
+                self.0.lyrics = lyr;
+            }
+            Message::ToggleLyrics => {
+                self.0.show_lyrics = !self.0.show_lyrics;
+            }
+
+            // ── Plan 7: Normalization ────────────────────────────────
+            Message::SetNormalizationMode(mode) => {
+                self.0.normalization_mode = mode;
+                self.apply_normalization();
+                self.save_config();
+            }
+
+            // ── Plan 9: Stats ────────────────────────────────────────
+            Message::StatsLoaded(stats) => {
+                self.0.stats = Some(stats);
+                self.0.stats_loading = false;
+            }
+            Message::RefreshStats => {
+                if let Some(rec) = &self.0.recommender {
+                    self.0.stats_loading = true;
+                    let rec_clone = rec.clone();
+                    return Command::perform(
+                        async move {
+                            tokio::task::spawn_blocking(move || {
+                                let guard = rec_clone.lock().unwrap();
+                                guard.get_stats().unwrap_or_default()
+                            }).await.unwrap_or_default()
+                        },
+                        Message::StatsLoaded,
+                    );
+                }
+            }
+
+            // ── Plan 10: Sleep Timer ─────────────────────────────────
+            Message::SetSleepTimer(mins) => {
+                if mins == 0 {
+                    self.0.sleep_timer = None;
+                    self.0.sleep_timer_volume_factor = 1.0;
+                } else {
+                    self.0.sleep_timer = Some(SleepTimer::new(mins));
+                    self.0.sleep_timer_volume_factor = 1.0;
+                    // Save last used duration.
+                    let mut config = AppConfig::load();
+                    config.last_sleep_timer_mins = mins;
+                    config.save();
+                }
+            }
+            Message::SleepTimerExpired => {
+                self.0.sleep_timer = None;
+                self.0.sleep_timer_volume_factor = 1.0;
+                // Pause playback.
+                if let Some(engine) = &self.0.playback {
+                    let _ = engine.pause();
+                }
+            }
+
+            // ── Plan 1: Crossfade ────────────────────────────────────
+            Message::ToggleCrossfade => {
+                self.0.crossfade_config.enabled = !self.0.crossfade_config.enabled;
+                self.sync_crossfade();
+                self.save_config();
+            }
+            Message::SetCrossfadeDuration(secs) => {
+                self.0.crossfade_config.duration_secs = secs;
+                self.sync_crossfade();
+                self.save_config();
+            }
+            Message::SetCrossfadeCurve(id) => {
+                self.0.crossfade_config.curve = musico_playback::CrossfadeCurve::from_id(&id);
+                self.sync_crossfade();
+                self.save_config();
+            }
         }
         Command::none()
     }
@@ -511,7 +793,7 @@ impl Application for Musico {
                     keyboard::Key::Character(c) => {
                         let ch = c.as_str();
                         match ch {
-                            "n" | "p" | "s" | "r" if !modifiers.shift() => {
+                            "n" | "p" | "s" | "r" | "l" if !modifiers.shift() => {
                                 Some(Message::KeyPressed(key))
                             }
                             _ => None,
@@ -549,17 +831,24 @@ impl Application for Musico {
             .width(Length::Fill)
             .height(Length::Fill)
             .padding(12)
-            .style(iced::theme::Container::Custom(Box::new(BaseContainerStyle)))
+            .style(iced::theme::Container::Custom(Box::new(BaseContainerStyle(self.0.art_tint))))
             .into()
     }
 }
 
-struct BaseContainerStyle;
+struct BaseContainerStyle(Color);
 impl iced::widget::container::StyleSheet for BaseContainerStyle {
     type Style = iced::Theme;
     fn appearance(&self, _style: &Self::Style) -> iced::widget::container::Appearance {
+        let mix = 0.08;
+        let base = crate::theme::BASE;
+        let r = base.r * (1.0 - mix) + self.0.r * mix;
+        let g = base.g * (1.0 - mix) + self.0.g * mix;
+        let b = base.b * (1.0 - mix) + self.0.b * mix;
+        let ambient_bg = Color::from_rgb(r, g, b);
+
         iced::widget::container::Appearance {
-            background: Some(iced::Background::Color(crate::theme::BASE)),
+            background: Some(iced::Background::Color(ambient_bg)),
             text_color: Some(crate::theme::TEXT_PRIMARY),
             ..Default::default()
         }
@@ -600,15 +889,26 @@ impl Musico {
                 Message::PlaySong,
                 Message::AddToQueue,
             ),
-            View::Settings => settings(
-                &self.0,
-                Message::PickFolder,
-                Message::ScanLibrary,
-                |p| Message::SetPalette(p),
-                |m| Message::SetFontMode(m),
-                Message::CheckForUpdate,
-                |url| Message::DownloadUpdate(url),
-            ),
+            View::Settings => {
+                let general = settings(
+                    &self.0,
+                    Message::PickFolder,
+                    Message::ScanLibrary,
+                    |p| Message::SetPalette(p),
+                    |m| Message::SetFontMode(m),
+                    Message::CheckForUpdate,
+                    |url| Message::DownloadUpdate(url),
+                );
+                let audio = crate::views::settings::audio_settings(&self.0);
+                iced::widget::column![general, audio].spacing(20).into()
+            },
+            View::Stats => {
+                // Auto-load stats on first visit.
+                if self.0.stats.is_none() && !self.0.stats_loading {
+                    // Can't return Command from view, just show loading.
+                }
+                crate::views::stats::stats_view(&self.0)
+            }
         }
     }
 
@@ -719,6 +1019,9 @@ impl Musico {
                         RepeatMode::One => RepeatMode::Off,
                     };
                 }
+                "l" => {
+                    self.0.show_lyrics = !self.0.show_lyrics;
+                }
                 _ => {}
             },
             _ => {}
@@ -773,7 +1076,67 @@ impl Musico {
             LibraryViewMode::Grid => "grid".to_string(),
             LibraryViewMode::List => "list".to_string(),
         };
+        config.eq_enabled = self.0.eq_enabled;
+        config.eq_preset_id = self.0.eq_preset_id.clone();
+        config.normalization_mode = self.0.normalization_mode.id().to_string();
+        config.crossfade_enabled = self.0.crossfade_config.enabled;
+        config.crossfade_duration = self.0.crossfade_config.duration_secs;
+        config.crossfade_curve = self.0.crossfade_config.curve.id().to_string();
         config.save();
+    }
+
+    /// Compute and apply normalization gain for the current song.
+    fn apply_normalization(&self) {
+        const TARGET_DB: f32 = -18.0;
+        let gain = match self.0.normalization_mode {
+            NormalizationMode::Off => 1.0,
+            NormalizationMode::Track | NormalizationMode::Album => {
+                // Find the current song's replay_gain_db from the library.
+                if let Some(current) = &self.0.current_song {
+                    let rms_db = self.0.library.iter()
+                        .find(|s| s.id == current.id)
+                        .map(|s| s.replay_gain_db)
+                        .unwrap_or(-18.0);
+                    // gain = 10^((target - track_db) / 20)
+                    10.0_f32.powf((TARGET_DB - rms_db) / 20.0).clamp(0.1, 5.0)
+                } else {
+                    1.0
+                }
+            }
+        };
+        if let Some(engine) = &self.0.playback {
+            let _ = engine.set_norm_gain(gain);
+        }
+    }
+
+    /// Sync the crossfade config to the playback engine.
+    fn sync_crossfade(&self) {
+        if let Some(engine) = &self.0.playback {
+            let _ = engine.set_crossfade(self.0.crossfade_config);
+        }
+    }
+
+    /// Update MPRIS metadata from current state.
+    fn update_mpris(&self) {
+        if let Some(mpris_state) = &self.0.mpris_state {
+            let status = match self.0.playback_status {
+                PlaybackStatus::Playing => "Playing",
+                PlaybackStatus::Paused => "Paused",
+                _ => "Stopped",
+            };
+            let meta = MprisMetadata {
+                track_id: self.0.current_song.as_ref().map(|s| s.id.clone()).unwrap_or_default(),
+                title: self.0.current_song.as_ref().map(|s| s.title.clone()).unwrap_or_default(),
+                artist: self.0.current_song.as_ref().map(|s| s.artist.clone()).unwrap_or_default(),
+                album: self.0.current_song.as_ref().map(|s| s.album.clone()).unwrap_or_default(),
+                duration_us: (self.0.duration_secs * 1_000_000.0) as i64,
+                art_url: String::new(),
+                playback_status: status.to_string(),
+                volume: self.0.volume as f64,
+                position_us: (self.0.position_secs * 1_000_000.0) as i64,
+            };
+            mpris::update_mpris_state(mpris_state, meta);
+        }
     }
 }
 

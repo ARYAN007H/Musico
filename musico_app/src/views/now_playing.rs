@@ -42,9 +42,7 @@ pub fn now_playing<'a, Message: 'a + Clone>(
     // Album Art — scale to available space
     let art_size = (state.window_height * 0.38).clamp(180.0, 360.0);
     
-    let art_handle = state.current_song.as_ref()
-        .and_then(|s| s.cover_art.as_ref())
-        .map(|bytes| iced::widget::image::Handle::from_memory(bytes.clone()));
+    let art_handle = state.cached_art_handle.clone();
     
     let art = art_canvas(art_handle, art_size, ctx.radius_lg + 8.0, accent);
     
@@ -67,11 +65,11 @@ pub fn now_playing<'a, Message: 'a + Clone>(
         row![
             text("♫").size(14.0).style(accent),
             Space::with_width(6),
-            text(title_text).font(ctx.font_display).size(28.0).style(p.text_primary),
+            text(title_text).font(ctx.font_display).size(32.0).style(p.text_primary),
         ].align_items(Alignment::Center)
     } else {
         row![
-            text(title_text).font(ctx.font_display).size(28.0).style(p.text_primary),
+            text(title_text).font(ctx.font_display).size(32.0).style(p.text_primary),
         ].align_items(Alignment::Center)
     };
 
@@ -212,6 +210,68 @@ pub fn now_playing<'a, Message: 'a + Clone>(
 
     content = content.push(volume_row);
 
+    // ── Lyrics Panel ──────────────────────────────────────────────────────
+    match &state.lyrics {
+        crate::lyrics::Lyrics::Synced(lines) if state.show_lyrics && !lines.is_empty() => {
+            let current_idx = crate::lyrics::current_line_index(lines, state.position_secs);
+
+            let mut lyrics_col = column![
+                Space::with_height(12),
+                container(Space::with_height(1)).width(Length::Fill)
+                    .style(iced::theme::Container::Custom(Box::new(DividerStyle(p.border_subtle)))),
+                Space::with_height(12),
+                text("LYRICS").font(ctx.font_rounded).size(theme::TEXT_CAPTION).style(p.text_muted),
+                Space::with_height(8),
+            ].spacing(2).width(Length::Fill).align_items(Alignment::Center);
+
+            // Show a window of ~7 lines around the current line.
+            let active = current_idx.unwrap_or(0);
+            let start = active.saturating_sub(3);
+            let end = (active + 4).min(lines.len());
+
+            for i in start..end {
+                let line = &lines[i];
+                let is_active = Some(i) == current_idx;
+                let line_color = if is_active {
+                    accent
+                } else {
+                    theme::with_alpha(p.text_secondary, 0.5)
+                };
+                let font_size = if is_active { 18.0 } else { 14.0 };
+
+                lyrics_col = lyrics_col.push(
+                    text(&line.text)
+                        .font(if is_active { ctx.font_display } else { ctx.font_text })
+                        .size(font_size)
+                        .style(line_color)
+                );
+            }
+
+            content = content.push(
+                container(lyrics_col).padding([8, 20]).width(Length::Fill)
+            );
+        }
+        crate::lyrics::Lyrics::Unsynced(text_str) if state.show_lyrics => {
+            content = content.push(
+                container(
+                    column![
+                        Space::with_height(12),
+                        container(Space::with_height(1)).width(Length::Fill)
+                            .style(iced::theme::Container::Custom(Box::new(DividerStyle(p.border_subtle)))),
+                        Space::with_height(12),
+                        text("LYRICS").font(ctx.font_rounded).size(theme::TEXT_CAPTION).style(p.text_muted),
+                        Space::with_height(8),
+                        text(text_str.as_str())
+                            .font(ctx.font_text)
+                            .size(14.0)
+                            .style(p.text_secondary),
+                    ].width(Length::Fill).align_items(Alignment::Center)
+                ).padding([8, 20]).width(Length::Fill)
+            );
+        }
+        _ => {}
+    }
+
     // Recommendations
     if !state.recommendations.is_empty() {
         let mut recs_col = column![
@@ -333,9 +393,9 @@ impl iced::widget::container::StyleSheet for GlowStyle {
                 ..Default::default()
             },
             shadow: iced::Shadow {
-                color: iced::Color { a: 0.35, ..self.0 },
-                offset: iced::Vector { x: 0.0, y: 0.0 },
-                blur_radius: 80.0,
+                color: iced::Color { a: 0.5, ..self.0 },
+                offset: iced::Vector { x: 0.0, y: 24.0 },
+                blur_radius: 100.0,
             },
             ..Default::default()
         }
@@ -427,14 +487,14 @@ impl iced::widget::container::StyleSheet for NowPlayingBgStyle {
         iced::widget::container::Appearance {
             background: Some(iced::Color::from_rgb(r, g, b).into()),
             border: iced::Border {
-                color: theme::BORDER_SUBTLE,
-                width: 1.0,
+                color: iced::Color::TRANSPARENT,
+                width: 0.0,
                 radius: 24.0.into(),
             },
             shadow: iced::Shadow {
-                color: iced::Color { a: 0.3, ..theme::BASE },
-                offset: iced::Vector { x: 0.0, y: 10.0 },
-                blur_radius: 30.0,
+                color: iced::Color::TRANSPARENT,
+                offset: iced::Vector::default(),
+                blur_radius: 0.0,
             },
             ..Default::default()
         }

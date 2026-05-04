@@ -248,6 +248,7 @@ pub fn sidebar<'a>(state: &'a AppState) -> Element<'a, Message> {
         nav_item("Now Playing", icon_now_playing(), View::NowPlaying, current, compact, accent),
         nav_item("Library",     icon_library(),     View::Library,    current, compact, accent),
         nav_item("Queue",       icon_queue(),       View::Queue,      current, compact, accent),
+        nav_item("Stats",       icon_library(),     View::Stats,      current, compact, accent),
     ]
     .spacing(2)
     .padding([4, if compact { 4 } else { 6 }]);

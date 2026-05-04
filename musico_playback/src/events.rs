@@ -27,6 +27,16 @@ pub enum PlaybackCommand {
     /// Hint to the decoder to begin pre-decoding the next song.
     /// Foundation for gapless playback — not fully implemented yet.
     PreloadNext(SongInfo),
+    /// Update EQ gains (10-band, values in dB).
+    SetEQ {
+        enabled: bool,
+        gains_db: [f32; 10],
+    },
+    /// Set normalization gain for the current track.
+    /// `gain_factor` = 10^((target_db - track_db) / 20).
+    SetNormGain(f32),
+    /// Update crossfade configuration.
+    SetCrossfade(crate::crossfade::CrossfadeConfig),
 }
 
 /// Events sent from the playback engine back to the GUI/app layer.

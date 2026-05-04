@@ -308,16 +308,16 @@ impl Palette {
 
 pub fn floating_panel(_theme: &iced::Theme) -> container::Appearance {
     container::Appearance {
-        background: Some(Background::Color(SURFACE)),
+        background: Some(Background::Color(with_alpha(SURFACE, 0.85))),
         border: Border {
-            color: BORDER_SUBTLE,
+            color: with_alpha(BORDER_SUBTLE, 0.5),
             width: 1.0,
             radius: 24.0.into(),
         },
         shadow: Shadow {
-            color: Color { a: 0.3, ..BASE },
-            offset: iced::Vector { x: 0.0, y: 10.0 },
-            blur_radius: 30.0,
+            color: Color { a: 0.4, ..BASE },
+            offset: iced::Vector { x: 0.0, y: 12.0 },
+            blur_radius: 36.0,
         },
         ..Default::default()
     }
@@ -337,9 +337,9 @@ pub fn glass_card(_theme: &iced::Theme) -> container::Appearance {
 
 pub fn elevated_card(_theme: &iced::Theme) -> container::Appearance {
     container::Appearance {
-        background: Some(Background::Color(ELEVATED)),
+        background: Some(Background::Color(with_alpha(ELEVATED, 0.75))),
         border: Border {
-            color: BORDER_SUBTLE,
+            color: with_alpha(BORDER_SUBTLE, 0.6),
             width: 1.0,
             radius: RADIUS_MD.into(),
         },
@@ -367,7 +367,7 @@ impl button::StyleSheet for NavButton {
             },
             text_color: if self.is_active { self.accent } else { TEXT_SECONDARY },
             border: Border {
-                radius: 10.0.into(),
+                radius: 24.0.into(),
                 color: if self.is_active { self.accent } else { Color::TRANSPARENT },
                 width: if self.is_active { 0.0 } else { 0.0 },
             },
@@ -384,7 +384,7 @@ impl button::StyleSheet for NavButton {
             })),
             text_color: if self.is_active { self.accent } else { TEXT_PRIMARY },
             border: Border {
-                radius: 10.0.into(),
+                radius: 24.0.into(),
                 ..Default::default()
             },
             ..Default::default()
@@ -502,15 +502,15 @@ impl slider::StyleSheet for VolumeSliderStyle {
     fn hovered(&self, _style: &Self::Style) -> slider::Appearance {
         slider::Appearance {
             rail: slider::Rail {
-                colors: (self.0, Color { a: 0.3, ..ELEVATED }),
-                width: 4.0,
-                border_radius: 2.0.into(),
+                colors: (self.0, Color { a: 0.4, ..ELEVATED }),
+                width: 6.0,
+                border_radius: 3.0.into(),
             },
             handle: slider::Handle {
-                shape: slider::HandleShape::Circle { radius: 7.0 },
+                shape: slider::HandleShape::Circle { radius: 8.0 },
                 color: Color::WHITE,
-                border_width: 2.0,
-                border_color: self.0,
+                border_width: 0.0,
+                border_color: Color::TRANSPARENT,
             },
         }
     }

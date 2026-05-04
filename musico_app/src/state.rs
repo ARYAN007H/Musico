@@ -1,10 +1,13 @@
 use std::path::PathBuf;
 use iced::Color;
 use musico_playback::{PlaybackEngine, PlaybackStatus, SongInfo, PlaybackQueue};
-use musico_recommender::{MusicRecommender, SongRecord, RecommendedSong};
+use musico_recommender::{MusicRecommender, SongRecord, RecommendedSong, ListeningStats};
 use std::sync::{Arc, Mutex};
 use crate::config::AppConfig;
 use crate::theme::{self, ColorPalette, FontMode, ThemeCtx};
+use crate::timer::SleepTimer;
+use crate::lyrics::Lyrics;
+use crate::mpris::MprisState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
@@ -12,6 +15,7 @@ pub enum View {
     Library,
     Queue,
     Settings,
+    Stats,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,6 +36,46 @@ pub enum RepeatMode {
     Off,
     One,
     All,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NormalizationMode {
+    Off,
+    Track,
+    Album,
+}
+
+impl NormalizationMode {
+    pub fn label(&self) -> &str {
+        match self {
+            Self::Off => "Off",
+            Self::Track => "Track",
+            Self::Album => "Album",
+        }
+    }
+    pub fn id(&self) -> &str {
+        match self {
+            Self::Off => "off",
+            Self::Track => "track",
+            Self::Album => "album",
+        }
+    }
+    pub fn from_id(id: &str) -> Self {
+        match id {
+            "track" => Self::Track,
+            "album" => Self::Album,
+            _ => Self::Off,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortField {
+    Title,
+    Artist,
+    Album,
+    Duration,
+    DateAdded,
 }
 
 #[derive(Debug, Clone)]
@@ -66,6 +110,8 @@ pub struct AppState {
     pub filtered_library: Vec<SongRecord>,
     pub search_query: String,
     pub library_view_mode: LibraryViewMode,
+    pub sort_field: SortField,
+    pub sort_ascending: bool,
 
     // Queue & Recommendations
     pub queue: PlaybackQueue,
@@ -80,6 +126,7 @@ pub struct AppState {
     pub art_tint: Color,
     pub color_palette: ColorPalette,
     pub font_mode: FontMode,
+    pub cached_art_handle: Option<iced::widget::image::Handle>,
 
     // Settings
     pub music_folder: Option<PathBuf>,
@@ -88,6 +135,35 @@ pub struct AppState {
 
     // Auto-update
     pub update_status: UpdateStatus,
+
+    // ── New features ──────────────────────────────────────────────────
+
+    // EQ (Plan 2)
+    pub eq_enabled: bool,
+    pub eq_preset_id: String,
+    pub eq_gains: [f32; 10],
+
+    // Normalization (Plan 7)
+    pub normalization_mode: NormalizationMode,
+
+    // Sleep Timer (Plan 10)
+    pub sleep_timer: Option<SleepTimer>,
+    pub sleep_timer_volume_factor: f32,
+
+    // Lyrics (Plan 6)
+    pub lyrics: Lyrics,
+    pub show_lyrics: bool,
+
+    // Stats (Plan 9)
+    pub stats: Option<ListeningStats>,
+    pub stats_loading: bool,
+
+    // MPRIS (Plan 3)
+    pub mpris_state: Option<MprisState>,
+    pub mpris_rx: Option<tokio::sync::mpsc::UnboundedReceiver<crate::mpris::MprisCommand>>,
+
+    // Crossfade (Plan 1)
+    pub crossfade_config: musico_playback::CrossfadeConfig,
 
     // Recommender (owned via Arc/Mutex for shared access if needed)
     pub recommender: Option<Arc<Mutex<MusicRecommender>>>,
@@ -107,6 +183,9 @@ impl AppState {
 
         let color_palette = theme::palette_by_id(&config.palette_id);
         let font_mode = FontMode::from_id(&config.font_mode);
+        let normalization_mode = NormalizationMode::from_id(&config.normalization_mode);
+
+        let eq_preset = musico_playback::eq::preset_by_id(&config.eq_preset_id);
 
         Self {
             active_view: View::NowPlaying,
@@ -126,6 +205,8 @@ impl AppState {
             filtered_library: Vec::new(),
             search_query: String::new(),
             library_view_mode,
+            sort_field: SortField::Title,
+            sort_ascending: true,
 
             queue: PlaybackQueue::new(),
             recommendations: Vec::new(),
@@ -137,12 +218,44 @@ impl AppState {
             art_tint: color_palette.primary,
             color_palette,
             font_mode,
+            cached_art_handle: None,
 
             music_folder: config.music_folder,
             is_indexing: false,
             index_progress: (0, 0),
 
             update_status: UpdateStatus::Idle,
+
+            // EQ
+            eq_enabled: config.eq_enabled,
+            eq_preset_id: config.eq_preset_id.clone(),
+            eq_gains: eq_preset.gains,
+
+            // Normalization
+            normalization_mode,
+
+            // Sleep timer
+            sleep_timer: None,
+            sleep_timer_volume_factor: 1.0,
+
+            // Lyrics
+            lyrics: Lyrics::None,
+            show_lyrics: false,
+
+            // Stats
+            stats: None,
+            stats_loading: false,
+
+            // MPRIS
+            mpris_state: None,
+            mpris_rx: None,
+
+            // Crossfade
+            crossfade_config: musico_playback::CrossfadeConfig {
+                enabled: config.crossfade_enabled,
+                duration_secs: config.crossfade_duration,
+                curve: musico_playback::CrossfadeCurve::from_id(&config.crossfade_curve),
+            },
 
             recommender: None,
             playback: None,

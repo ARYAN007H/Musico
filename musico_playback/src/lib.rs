@@ -26,7 +26,9 @@
 //! // let events = engine.poll_events();
 //! ```
 
+pub mod crossfade;
 pub mod decoder;
+pub mod eq;
 pub mod error;
 pub mod events;
 pub mod output;
@@ -38,6 +40,7 @@ pub use error::PlaybackError;
 pub use events::{PlaybackCommand, PlaybackEvent};
 pub use queue::PlaybackQueue;
 pub use state::{PlaybackState, PlaybackStatus, SongInfo};
+pub use crossfade::{CrossfadeConfig, CrossfadeCurve};
 
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -172,6 +175,27 @@ impl PlaybackEngine {
     pub fn preload_next(&self, song: SongInfo) -> Result<(), PlaybackError> {
         self.cmd_tx
             .send(PlaybackCommand::PreloadNext(song))
+            .map_err(|_| PlaybackError::ChannelDisconnected)
+    }
+
+    /// Update the 10-band EQ settings.
+    pub fn set_eq(&self, enabled: bool, gains_db: [f32; 10]) -> Result<(), PlaybackError> {
+        self.cmd_tx
+            .send(PlaybackCommand::SetEQ { enabled, gains_db })
+            .map_err(|_| PlaybackError::ChannelDisconnected)
+    }
+
+    /// Set the normalization gain factor for the current track.
+    pub fn set_norm_gain(&self, gain_factor: f32) -> Result<(), PlaybackError> {
+        self.cmd_tx
+            .send(PlaybackCommand::SetNormGain(gain_factor))
+            .map_err(|_| PlaybackError::ChannelDisconnected)
+    }
+
+    /// Update crossfade configuration.
+    pub fn set_crossfade(&self, config: CrossfadeConfig) -> Result<(), PlaybackError> {
+        self.cmd_tx
+            .send(PlaybackCommand::SetCrossfade(config))
             .map_err(|_| PlaybackError::ChannelDisconnected)
     }
 }
@@ -315,6 +339,14 @@ fn play_song(
     let mut process_buf: Vec<f32> = Vec::with_capacity(8192);
     let mut channel_buf: Vec<f32> = Vec::with_capacity(8192);
 
+    // ── EQ and Normalization state ──
+    let mut equalizer = eq::Equalizer::new(device_sr, device_ch);
+    let mut norm_gain: f32 = 1.0; // 1.0 = no normalization
+
+    // ── Crossfade state ──
+    let mut crossfade_mixer = crossfade::CrossfadeMixer::new(CrossfadeConfig::default());
+    let mut preloaded_decoder: Option<(decoder::AudioDecoder, SongInfo)> = None;
+
     // Set state to buffering.
     {
         let mut st = state.lock().unwrap_or_else(|e| e.into_inner());
@@ -337,6 +369,11 @@ fn play_song(
                     &samples, &mut resampler_opt, source_ch, device_ch,
                     &mut process_buf, &mut channel_buf,
                 );
+                // Apply EQ + normalization to the buffer.
+                equalizer.process_interleaved(&mut process_buf);
+                if (norm_gain - 1.0).abs() > 0.001 {
+                    for s in process_buf.iter_mut() { *s *= norm_gain; }
+                }
                 let pushed = push_samples(audio_output.producer(), &process_buf);
                 filled += pushed;
             }
@@ -391,8 +428,6 @@ fn play_song(
                                 return;
                             }
                             Ok(PlaybackCommand::Play(new_song)) => {
-                                // New song requested while paused — stop current,
-                                // then start the new one via recursive call.
                                 set_stopped(state);
                                 play_song(new_song, cmd_rx, event_tx, state, audio_output, device_sr, device_ch);
                                 return;
@@ -412,6 +447,13 @@ fn play_song(
                             Ok(PlaybackCommand::Unmute) => {
                                 audio_output.set_muted(false);
                                 state.lock().unwrap_or_else(|e| e.into_inner()).muted = false;
+                            }
+                            Ok(PlaybackCommand::SetEQ { enabled, gains_db }) => {
+                                equalizer.set_enabled(enabled);
+                                equalizer.set_gains(gains_db);
+                            }
+                            Ok(PlaybackCommand::SetNormGain(g)) => {
+                                norm_gain = g;
                             }
                             Ok(_) => {} // ignore seek etc while paused
                             Err(_) => return,
@@ -463,7 +505,28 @@ fn play_song(
                     state.lock().unwrap_or_else(|e| e.into_inner()).muted = false;
                 }
                 PlaybackCommand::PreloadNext(s) => {
-                    log::info!("Preload hint: {}", s.title);
+                    log::info!("Preloading next: {}", s.title);
+                    match decoder::AudioDecoder::new(&s.file_path) {
+                        Ok((dec_next, info_next)) => {
+                            let mut merged = info_next;
+                            if !s.id.is_empty() { merged.id = s.id.clone(); }
+                            if s.cover_art.is_some() { merged.cover_art = s.cover_art.clone(); }
+                            preloaded_decoder = Some((dec_next, merged));
+                        }
+                        Err(e) => {
+                            log::warn!("Failed to preload: {e}");
+                        }
+                    }
+                }
+                PlaybackCommand::SetCrossfade(config) => {
+                    crossfade_mixer.config = config;
+                }
+                PlaybackCommand::SetEQ { enabled, gains_db } => {
+                    equalizer.set_enabled(enabled);
+                    equalizer.set_gains(gains_db);
+                }
+                PlaybackCommand::SetNormGain(g) => {
+                    norm_gain = g;
                 }
                 PlaybackCommand::Resume => {} // already playing
             }
@@ -477,6 +540,19 @@ fn play_song(
                     &samples, &mut resampler_opt, source_ch, device_ch,
                     &mut process_buf, &mut channel_buf,
                 );
+
+                // ── Audio processing chain ──
+                // 1. EQ (in-place, zero-alloc)
+                equalizer.process_interleaved(&mut process_buf);
+                // 2. Normalization gain (in-place)
+                if (norm_gain - 1.0).abs() > 0.001 {
+                    for s in process_buf.iter_mut() {
+                        *s *= norm_gain;
+                        // Soft clip to prevent clipping.
+                        if *s > 1.0 { *s = 1.0 - (-(*s - 1.0)).exp() * 0.5; }
+                        else if *s < -1.0 { *s = -1.0 + (-(-*s - 1.0)).exp() * 0.5; }
+                    }
+                }
 
                 // Push to ring buffer, spin-waiting if full.
                 push_samples_blocking(audio_output.producer(), &process_buf);
@@ -499,8 +575,8 @@ fn play_song(
                 }
             }
             Ok(None) => {
-                // Song ended — wait for ring buffer to drain.
-                thread::sleep(Duration::from_millis(200));
+                // Song ended — report listening stats.
+                thread::sleep(Duration::from_millis(100));
                 accumulate_listen(state);
                 let (song_id, listened, duration) = {
                     let st = state.lock().unwrap_or_else(|e| e.into_inner());
@@ -515,6 +591,20 @@ fn play_song(
                     listened_secs: listened,
                     duration_secs: duration,
                 });
+
+                // ── Gapless transition ──
+                // If a next song was preloaded, start it immediately without stopping.
+                if let Some((_preloaded_dec, next_song_info)) = preloaded_decoder.take() {
+                    log::info!("Gapless transition to: {}", next_song_info.title);
+                    // Convert SongInfo to use play_song (it opens its own decoder).
+                    set_stopped(state);
+                    play_song(
+                        next_song_info, cmd_rx, event_tx, state,
+                        audio_output, device_sr, device_ch,
+                    );
+                    return;
+                }
+
                 set_stopped(state);
                 return;
             }
