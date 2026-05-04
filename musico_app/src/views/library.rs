@@ -123,27 +123,80 @@ pub fn library<'a>(
 
     // Content
     let content: Element<'a, Message> = if songs.is_empty() {
-        container(
-            column![
-                text("♫").size(48.0).style(theme::with_alpha(accent, 0.3)),
-                Space::with_height(12),
-                text(if state.search_query.is_empty() { "Library is empty" } else { "No results found" })
-                    .font(ctx.font_display)
-                    .size(theme::TEXT_TITLE)
-                    .style(p.text_muted),
-                Space::with_height(4),
-                text(if state.search_query.is_empty() { "Add a music folder in Settings" } else { "Try a different search" })
-                    .font(ctx.font_text)
-                    .size(theme::TEXT_CAPTION)
-                    .style(p.text_muted),
-            ]
-            .align_items(Alignment::Center)
-        )
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .center_x()
-        .center_y()
-        .into()
+        if state.search_query.is_empty() {
+            // ── Rich empty state: No songs indexed ──
+            let icon = container(
+                iced::widget::svg(iced::widget::svg::Handle::from_memory(crate::icons::LIBRARY))
+                    .width(Length::Fixed(48.0))
+                    .height(Length::Fixed(48.0))
+                    .style(iced::theme::Svg::Custom(Box::new(theme::SvgStyle(
+                        theme::with_alpha(accent, 0.4),
+                    ))))
+            )
+            .width(Length::Fixed(100.0))
+            .height(Length::Fixed(100.0))
+            .center_x()
+            .center_y()
+            .style(iced::theme::Container::Custom(Box::new(EmptyIconStyle(accent))));
+
+            let cta_btn = button(
+                row![
+                    text("⚙").size(16.0).style(iced::Color::WHITE),
+                    Space::with_width(8),
+                    text("Set up Music Folder").font(ctx.font_text).size(14.0).style(iced::Color::WHITE),
+                ].align_items(Alignment::Center)
+            )
+            .on_press(Message::NavigateTo(crate::state::View::Settings))
+            .padding([14, 28])
+            .style(iced::theme::Button::Custom(Box::new(CTAButtonStyle(accent))));
+
+            container(
+                column![
+                    icon,
+                    Space::with_height(20),
+                    text("Your library is empty")
+                        .font(ctx.font_display)
+                        .size(22.0)
+                        .style(p.text_primary),
+                    Space::with_height(8),
+                    text("Point Musico at your music collection to get started")
+                        .font(ctx.font_text)
+                        .size(14.0)
+                        .style(p.text_muted),
+                    Space::with_height(24),
+                    cta_btn,
+                ]
+                .align_items(Alignment::Center)
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x()
+            .center_y()
+            .into()
+        } else {
+            // ── No search results ──
+            container(
+                column![
+                    text("🔍").size(48.0),
+                    Space::with_height(12),
+                    text("No results found")
+                        .font(ctx.font_display)
+                        .size(theme::TEXT_TITLE)
+                        .style(p.text_primary),
+                    Space::with_height(4),
+                    text(format!("Nothing matching \"{}\"", state.search_query))
+                        .font(ctx.font_text)
+                        .size(theme::TEXT_CAPTION)
+                        .style(p.text_muted),
+                ]
+                .align_items(Alignment::Center)
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .center_x()
+            .center_y()
+            .into()
+        }
     } else {
         match state.library_view_mode {
             LibraryViewMode::List => {
@@ -378,6 +431,65 @@ impl iced::widget::button::StyleSheet for SortPillStyle {
                 color: theme::with_alpha(self.accent, 0.3),
                 width: 1.0,
                 radius: 50.0.into(),
+            },
+            ..Default::default()
+        }
+    }
+}
+
+struct EmptyIconStyle(Color);
+impl iced::widget::container::StyleSheet for EmptyIconStyle {
+    type Style = iced::Theme;
+    fn appearance(&self, _: &Self::Style) -> iced::widget::container::Appearance {
+        iced::widget::container::Appearance {
+            background: Some(theme::with_alpha(self.0, 0.08).into()),
+            border: iced::Border {
+                radius: 28.0.into(),
+                color: theme::with_alpha(self.0, 0.15),
+                width: 1.0,
+            },
+            ..Default::default()
+        }
+    }
+}
+
+struct CTAButtonStyle(Color);
+impl iced::widget::button::StyleSheet for CTAButtonStyle {
+    type Style = iced::Theme;
+    fn active(&self, _: &Self::Style) -> iced::widget::button::Appearance {
+        iced::widget::button::Appearance {
+            background: Some(self.0.into()),
+            text_color: Color::WHITE,
+            border: iced::Border {
+                radius: 50.0.into(),
+                ..Default::default()
+            },
+            shadow: iced::Shadow {
+                color: Color { a: 0.3, ..self.0 },
+                offset: iced::Vector { x: 0.0, y: 4.0 },
+                blur_radius: 16.0,
+            },
+            ..Default::default()
+        }
+    }
+    fn hovered(&self, _: &Self::Style) -> iced::widget::button::Appearance {
+        let brighter = Color {
+            r: (self.0.r * 1.15).min(1.0),
+            g: (self.0.g * 1.15).min(1.0),
+            b: (self.0.b * 1.15).min(1.0),
+            a: self.0.a,
+        };
+        iced::widget::button::Appearance {
+            background: Some(brighter.into()),
+            text_color: Color::WHITE,
+            border: iced::Border {
+                radius: 50.0.into(),
+                ..Default::default()
+            },
+            shadow: iced::Shadow {
+                color: Color { a: 0.4, ..self.0 },
+                offset: iced::Vector { x: 0.0, y: 6.0 },
+                blur_radius: 24.0,
             },
             ..Default::default()
         }

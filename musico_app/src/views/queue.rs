@@ -1,5 +1,5 @@
 use iced::widget::{button, column, container, row, scrollable, text, Space};
-use iced::{Alignment, Color, Element, Length};
+use iced::{Alignment, Background, Border, Color, Element, Length};
 use musico_recommender::SongRecord;
 use crate::state::AppState;
 use crate::theme::{self, Palette};
@@ -28,15 +28,29 @@ pub fn queue<'a, Message: 'a + Clone>(
     );
 
     if state.queue.is_empty() {
-        // Inviting empty state
+        // Rich empty state with icon
+        let empty_icon = container(
+            iced::widget::svg(iced::widget::svg::Handle::from_memory(crate::icons::QUEUE))
+                .width(Length::Fixed(32.0))
+                .height(Length::Fixed(32.0))
+                .style(iced::theme::Svg::Custom(Box::new(theme::SvgStyle(
+                    theme::with_alpha(accent, 0.4),
+                ))))
+        )
+        .width(Length::Fixed(72.0))
+        .height(Length::Fixed(72.0))
+        .center_x()
+        .center_y()
+        .style(iced::theme::Container::Custom(Box::new(EmptyQueueIconStyle(accent))));
+
         content = content.push(
             container(
                 column![
-                    text("♫").size(32.0).style(theme::with_alpha(accent, 0.3)),
-                    Space::with_height(8),
-                    text("Queue is empty").font(ctx.font_text).size(theme::TEXT_BODY).style(p.text_muted),
+                    empty_icon,
+                    Space::with_height(12),
+                    text("Queue is empty").font(ctx.font_text).size(theme::TEXT_BODY).style(p.text_primary),
                     Space::with_height(4),
-                    text("Add songs from Library or let Smart Radio pick for you")
+                    text("Add songs from Library or let Smart Radio fill it for you")
                         .font(ctx.font_text)
                         .size(theme::TEXT_CAPTION)
                         .style(p.text_muted),
@@ -46,7 +60,7 @@ pub fn queue<'a, Message: 'a + Clone>(
             )
             .width(Length::Fill)
             .center_x()
-            .padding([20, 0])
+            .padding([24, 0])
         );
     } else {
         let mut q_col = column![].spacing(2);
@@ -197,6 +211,49 @@ impl iced::widget::container::StyleSheet for DotStyle {
                 color: iced::Color::TRANSPARENT,
                 width: 0.0,
                 radius: 4.0.into(),
+            },
+            ..Default::default()
+        }
+    }
+}
+
+struct EmptyQueueIconStyle(Color);
+impl iced::widget::container::StyleSheet for EmptyQueueIconStyle {
+    type Style = iced::Theme;
+    fn appearance(&self, _: &Self::Style) -> iced::widget::container::Appearance {
+        iced::widget::container::Appearance {
+            background: Some(Background::Color(theme::with_alpha(self.0, 0.08))),
+            border: Border {
+                radius: 20.0.into(),
+                color: theme::with_alpha(self.0, 0.15),
+                width: 1.0,
+            },
+            ..Default::default()
+        }
+    }
+}
+
+struct BrowseBtnStyle(Color);
+impl iced::widget::button::StyleSheet for BrowseBtnStyle {
+    type Style = iced::Theme;
+    fn active(&self, _: &Self::Style) -> iced::widget::button::Appearance {
+        iced::widget::button::Appearance {
+            background: Some(theme::with_alpha(self.0, 0.1).into()),
+            border: Border {
+                radius: 50.0.into(),
+                color: theme::with_alpha(self.0, 0.25),
+                width: 1.0,
+            },
+            ..Default::default()
+        }
+    }
+    fn hovered(&self, _: &Self::Style) -> iced::widget::button::Appearance {
+        iced::widget::button::Appearance {
+            background: Some(theme::with_alpha(self.0, 0.18).into()),
+            border: Border {
+                radius: 50.0.into(),
+                color: theme::with_alpha(self.0, 0.35),
+                width: 1.0,
             },
             ..Default::default()
         }

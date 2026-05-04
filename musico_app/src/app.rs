@@ -220,7 +220,16 @@ impl Application for Musico {
             }
             Message::LoadAllSongs(songs) => {
                 self.0.library = songs.clone();
-                self.0.filtered_library = songs;
+                self.0.filtered_library = songs.clone();
+                // Auto-scan if library is empty but music folder is set.
+                if songs.is_empty() {
+                    if let Some(folder) = &self.0.music_folder {
+                        if folder.exists() {
+                            log::info!("Library empty but folder set — auto-scanning: {}", folder.display());
+                            return Command::perform(async {}, |_| Message::ScanLibrary);
+                        }
+                    }
+                }
             }
 
             // ── Playback ──────────────────────────────────────────────
@@ -578,6 +587,8 @@ impl Application for Musico {
             Message::MusicFolderChanged(path) => {
                 self.0.music_folder = Some(path);
                 self.save_config();
+                // Auto-trigger scan after folder change.
+                return Command::perform(async {}, |_| Message::ScanLibrary);
             }
             Message::ArtColorExtracted(color) => {
                 self.0.art_dominant_color = Some(color);

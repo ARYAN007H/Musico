@@ -315,7 +315,14 @@ pub fn now_playing<'a, Message: 'a + Clone>(
 
 fn empty_state<'a, Message: 'a + Clone>(p: &Palette, ctx: &theme::ThemeCtx, accent: Color) -> Element<'a, Message> {
     let icon = container(
-        text("♫").size(64.0).style(theme::with_alpha(accent, 0.4))
+        column![
+            svg(svg::Handle::from_memory(icons::NOW_PLAYING))
+                .width(Length::Fixed(48.0))
+                .height(Length::Fixed(48.0))
+                .style(iced::theme::Svg::Custom(Box::new(crate::theme::SvgStyle(
+                    theme::with_alpha(accent, 0.5),
+                )))),
+        ].align_items(Alignment::Center)
     )
     .width(Length::Fixed(120.0))
     .height(Length::Fixed(120.0))
@@ -327,9 +334,12 @@ fn empty_state<'a, Message: 'a + Clone>(p: &Palette, ctx: &theme::ThemeCtx, acce
         Space::with_height(80),
         icon,
         Space::with_height(24),
-        text("Nothing playing").font(ctx.font_display).size(22.0).style(p.text_primary),
-        Space::with_height(4),
-        text("Pick something from your library").font(ctx.font_text).size(14.0).style(p.text_muted),
+        text("Nothing playing").font(ctx.font_display).size(24.0).style(p.text_primary),
+        Space::with_height(6),
+        text("Pick something from your library to get started")
+            .font(ctx.font_text)
+            .size(14.0)
+            .style(p.text_muted),
     ]
     .align_items(Alignment::Center)
     .width(Length::Fill);
@@ -478,8 +488,9 @@ struct NowPlayingBgStyle(iced::Color, iced::Color);
 impl iced::widget::container::StyleSheet for NowPlayingBgStyle {
     type Style = iced::Theme;
     fn appearance(&self, _style: &Self::Style) -> iced::widget::container::Appearance {
-        // Blend accent into base for ambient tint
-        let mix = 0.10;
+        // Deeper ambient blend: accent color suffused into the base for
+        // a warm, immersive "spotlight" effect
+        let mix = 0.14;
         let r = self.1.r * (1.0 - mix) + self.0.r * mix;
         let g = self.1.g * (1.0 - mix) + self.0.g * mix;
         let b = self.1.b * (1.0 - mix) + self.0.b * mix;
@@ -487,14 +498,14 @@ impl iced::widget::container::StyleSheet for NowPlayingBgStyle {
         iced::widget::container::Appearance {
             background: Some(iced::Color::from_rgb(r, g, b).into()),
             border: iced::Border {
-                color: iced::Color::TRANSPARENT,
-                width: 0.0,
+                color: theme::with_alpha(self.0, 0.08),
+                width: 1.0,
                 radius: 24.0.into(),
             },
             shadow: iced::Shadow {
-                color: iced::Color::TRANSPARENT,
-                offset: iced::Vector::default(),
-                blur_radius: 0.0,
+                color: iced::Color { a: 0.2, ..self.0 },
+                offset: iced::Vector { x: 0.0, y: 0.0 },
+                blur_radius: 60.0,
             },
             ..Default::default()
         }

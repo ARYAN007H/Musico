@@ -50,7 +50,7 @@ pub fn settings<'a, Message: 'a + Clone>(
 
     content = content.push(folder_section);
 
-    // Re-index Section
+    // Re-index Section — Enhanced with animated progress
     let mut index_content = column![
         text("Library Index").font(ctx.font_rounded).size(theme::TEXT_TITLE).style(p.text_primary),
         Space::with_height(12),
@@ -59,29 +59,76 @@ pub fn settings<'a, Message: 'a + Clone>(
     if state.is_indexing {
         let (done, total) = state.index_progress;
         let progress = if total > 0 { done as f32 / total as f32 } else { 0.0 };
+        let percent = (progress * 100.0) as u32;
         
+        // Spinning indicator character based on progress
+        let spinner_chars = ["◐", "◓", "◑", "◒"];
+        let spinner = spinner_chars[done % spinner_chars.len()];
+
+        // Status header with spinner and percentage
         index_content = index_content.push(
             row![
-                progress_bar(0.0..=1.0, progress)
-                    .height(Length::Fixed(8.0))
-                    .style(iced::theme::ProgressBar::Custom(Box::new(ProgressStyle(accent, p.surface)))),
-                Space::with_width(12),
-                text(format!("{}/{}", done, total)).font(ctx.font_text).size(theme::TEXT_CAPTION).style(p.text_muted)
+                text(spinner).size(20.0).style(accent),
+                Space::with_width(10),
+                text(format!("Indexing... {}%", percent))
+                    .font(ctx.font_rounded)
+                    .size(theme::TEXT_BODY)
+                    .style(accent),
+                Space::with_width(Length::Fill),
+                text(format!("{} / {} songs", done, total))
+                    .font(ctx.font_text)
+                    .size(theme::TEXT_CAPTION)
+                    .style(p.text_secondary),
             ].align_items(Alignment::Center)
+        );
+
+        index_content = index_content.push(Space::with_height(8));
+
+        // Progress bar
+        index_content = index_content.push(
+            progress_bar(0.0..=1.0, progress)
+                .height(Length::Fixed(6.0))
+                .style(iced::theme::ProgressBar::Custom(Box::new(ProgressStyle(accent, p.surface))))
+        );
+
+        // Hint text
+        index_content = index_content.push(
+            text("Analyzing audio features for smart recommendations...")
+                .font(ctx.font_text)
+                .size(11.0)
+                .style(p.text_muted)
         );
     } else {
         let lib_count = state.library.len();
         if lib_count > 0 {
+            // Show song count with accent badge
             index_content = index_content.push(
-                text(format!("{} songs indexed", lib_count))
-                    .font(ctx.font_text)
-                    .size(theme::TEXT_CAPTION)
-                    .style(p.text_muted)
+                row![
+                    container(
+                        text(format!("{}", lib_count))
+                            .font(ctx.font_rounded)
+                            .size(theme::TEXT_BODY)
+                            .style(accent)
+                    )
+                    .padding([4, 12])
+                    .style(iced::theme::Container::Custom(Box::new(CountBadgeStyle(accent)))),
+                    Space::with_width(10),
+                    text("songs indexed")
+                        .font(ctx.font_text)
+                        .size(theme::TEXT_BODY)
+                        .style(p.text_secondary),
+                ].align_items(Alignment::Center)
             );
-            index_content = index_content.push(Space::with_height(6));
+            index_content = index_content.push(Space::with_height(8));
         }
         index_content = index_content.push(
-            button(text("Re-index Library").font(ctx.font_text).style(p.text_primary))
+            button(
+                row![
+                    text("⟳").size(16.0).style(p.text_primary),
+                    Space::with_width(8),
+                    text("Re-index Library").font(ctx.font_text).style(p.text_primary),
+                ].align_items(Alignment::Center)
+            )
                 .on_press(on_scan)
                 .padding([12, 20])
                 .style(iced::theme::Button::Custom(Box::new(PrimaryBtnStyle(p.elevated, p.highlight))))
@@ -549,6 +596,22 @@ impl iced::widget::container::StyleSheet for InputBgStyle {
                 color: iced::Color::TRANSPARENT,
                 width: 0.0,
                 radius: theme::RADIUS_MD.into(),
+            },
+            ..Default::default()
+        }
+    }
+}
+
+struct CountBadgeStyle(Color);
+impl iced::widget::container::StyleSheet for CountBadgeStyle {
+    type Style = iced::Theme;
+    fn appearance(&self, _style: &Self::Style) -> iced::widget::container::Appearance {
+        iced::widget::container::Appearance {
+            background: Some(theme::with_alpha(self.0, 0.1).into()),
+            border: iced::Border {
+                color: theme::with_alpha(self.0, 0.25),
+                width: 1.0,
+                radius: 50.0.into(),
             },
             ..Default::default()
         }

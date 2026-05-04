@@ -213,7 +213,7 @@ impl Default for SongScoreCache {
 /// Result of a single-pass audio analysis combining feature extraction and
 /// metadata reading.
 #[derive(Debug, Clone)]
-pub(crate) struct AnalysisResult {
+pub struct AnalysisResult {
     pub feature_vector: FeatureVector,
     pub duration_secs: u32,
     pub title: String,

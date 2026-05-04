@@ -129,6 +129,42 @@ pub(crate) fn index_song_no_flush(store: &Store, path: &str) -> Result<SongRecor
     Ok(record)
 }
 
+/// Indexes a song from a pre-computed [`AnalysisResult`], bypassing the dedup
+/// guard.  Used after clearing indices for a full re-scan.
+pub(crate) fn index_from_result(
+    store: &Store,
+    path: &str,
+    result: crate::models::AnalysisResult,
+) -> Result<SongRecord, RecommenderError> {
+    let id = Uuid::new_v4().to_string();
+    let record = SongRecord {
+        id: id.clone(),
+        file_path: path.to_string(),
+        title: result.title,
+        artist: result.artist,
+        album: result.album,
+        duration_secs: result.duration_secs,
+        feature_vector: result.feature_vector,
+        indexed_at: Utc::now(),
+        replay_gain_db: result.rms_db,
+    };
+
+    let value = bincode::serialize(&record).map_err(|e| {
+        RecommenderError::DbError(sled::Error::Io(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("bincode serialize: {e}"),
+        )))
+    })?;
+
+    store.songs.insert(id.as_bytes(), value).map_err(RecommenderError::DbError)?;
+    let path_key = format!("path:{path}");
+    store.db.insert(path_key.as_bytes(), id.as_bytes()).map_err(RecommenderError::DbError)?;
+    store.increment_song_count().map_err(RecommenderError::DbError)?;
+    store.songs.flush().map_err(RecommenderError::DbError)?;
+
+    Ok(record)
+}
+
 // ---------------------------------------------------------------------------
 // Retrieval
 // ---------------------------------------------------------------------------

@@ -39,6 +39,7 @@ fn nav_item<'a>(
     current: View,
     compact: bool,
     accent: iced::Color,
+    badge: Option<usize>,
 ) -> Element<'a, Message> {
     let is_active = current == target;
 
@@ -49,23 +50,64 @@ fn nav_item<'a>(
         .style(iced::theme::Svg::Custom(Box::new(theme::SvgStyle(icon_color))));
 
     let inner: Element<'a, Message> = if compact {
-        // Icon-only mode — centered icon, no label
-        container(icon_widget)
+        // Icon-only mode — centered icon with optional badge dot
+        let icon_container = container(icon_widget)
             .width(Length::Fill)
             .center_x()
-            .padding([12, 0])
-            .into()
+            .padding([12, 0]);
+
+        if let Some(count) = badge {
+            if count > 0 {
+                // Show a small dot indicator in compact mode
+                column![
+                    icon_container,
+                    container(
+                        text(format!("{}", count.min(999)))
+                            .size(8.0)
+                            .style(accent)
+                    )
+                    .width(Length::Fill)
+                    .center_x()
+                ]
+                .spacing(0)
+                .into()
+            } else {
+                icon_container.into()
+            }
+        } else {
+            icon_container.into()
+        }
     } else {
-        // Full mode — icon + label + accent left bar
+        // Full mode — icon + label + optional badge + accent left bar
         let label_widget = text(label)
             .size(SIZE_LABEL)
             .style(if is_active { accent } else { TEXT_SECONDARY });
 
-        let content = row![icon_widget, label_widget]
+        let mut content = row![icon_widget, label_widget]
             .spacing(10)
             .align_items(Alignment::Center)
-            .padding([10, 14])
             .width(Length::Fill);
+
+        // Add badge pill if provided and > 0
+        if let Some(count) = badge {
+            if count > 0 {
+                content = content.push(Space::with_width(Length::Fill));
+                content = content.push(
+                    container(
+                        text(format!("{}", count))
+                            .size(10.0)
+                            .style(if is_active { accent } else { TEXT_MUTED })
+                    )
+                    .padding([2, 8])
+                    .style(iced::theme::Container::Custom(Box::new(BadgePillStyle {
+                        accent,
+                        is_active,
+                    })))
+                );
+            }
+        }
+
+        let content = content.padding([10, 14]);
 
         if is_active {
             // Active item: accent left bar + tinted bg
@@ -85,6 +127,29 @@ fn nav_item<'a>(
         .width(Length::Fill);
 
     container(btn).padding([0, if compact { 4 } else { 6 }]).width(Length::Fill).into()
+}
+
+// ─── Badge pill style ────────────────────────────────────────────────────────
+
+struct BadgePillStyle {
+    accent: iced::Color,
+    is_active: bool,
+}
+impl iced::widget::container::StyleSheet for BadgePillStyle {
+    type Style = iced::Theme;
+    fn appearance(&self, _style: &Self::Style) -> iced::widget::container::Appearance {
+        iced::widget::container::Appearance {
+            background: Some(Background::Color(with_alpha(
+                if self.is_active { self.accent } else { TEXT_MUTED },
+                0.12,
+            ))),
+            border: Border {
+                radius: 50.0.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
 }
 
 // ─── Accent left bar style ───────────────────────────────────────────────────
@@ -138,7 +203,7 @@ fn now_playing_mini<'a>(state: &'a AppState, compact: bool) -> Element<'a, Messa
                 )
                 .width(Length::Fixed(img_size))
                 .height(Length::Fixed(img_size))
-                .style(|_theme: &iced::Theme| container::Appearance {
+                .style(move |_theme: &iced::Theme| container::Appearance {
                     background: Some(Background::Color(with_alpha(PALETTE_NEBULA.primary, 0.12))),
                     border: Border {
                         radius: 7.0.into(),
@@ -244,12 +309,15 @@ pub fn sidebar<'a>(state: &'a AppState) -> Element<'a, Message> {
     let accent = state.art_tint;
     let sw = theme::sidebar_width(state.window_width);
 
+    let lib_count = state.library.len();
+    let queue_count = state.queue.len();
+
     let nav_section = column![
-        nav_item("Now Playing", icon_now_playing(), View::NowPlaying, current, compact, accent),
-        nav_item("Library",     icon_library(),     View::Library,    current, compact, accent),
-        nav_item("Queue",       icon_queue(),       View::Queue,      current, compact, accent),
-        nav_item("Playlists",   icon_queue(),       View::Playlists,  current, compact, accent),
-        nav_item("Stats",       icon_library(),     View::Stats,      current, compact, accent),
+        nav_item("Now Playing", icon_now_playing(), View::NowPlaying, current, compact, accent, None),
+        nav_item("Library",     icon_library(),     View::Library,    current, compact, accent, Some(lib_count)),
+        nav_item("Queue",       icon_queue(),       View::Queue,      current, compact, accent, Some(queue_count)),
+        nav_item("Playlists",   icon_queue(),       View::Playlists,  current, compact, accent, None),
+        nav_item("Stats",       icon_library(),     View::Stats,      current, compact, accent, None),
     ]
     .spacing(2)
     .padding([4, if compact { 4 } else { 6 }]);
@@ -263,7 +331,7 @@ pub fn sidebar<'a>(state: &'a AppState) -> Element<'a, Message> {
             })
             .width(Length::Fill)
             .padding([0, if compact { 4 } else { 8 }]),
-        nav_item("Settings", icon_settings(), View::Settings, current, compact, accent),
+        nav_item("Settings", icon_settings(), View::Settings, current, compact, accent, None),
     ]
     .spacing(8)
     .padding([8, 0]);

@@ -22,7 +22,7 @@
 //! ```
 
 pub mod errors;
-pub(crate) mod extractor;
+pub mod extractor;
 pub mod history;
 pub mod models;
 pub mod playlists;
@@ -198,6 +198,46 @@ impl MusicRecommender {
     /// Looks up a single song by UUID. Returns `Ok(None)` if not found.
     pub fn get_song_by_id(&self, id: &str) -> Result<Option<SongRecord>, RecommenderError> {
         vector_store::get_song_by_id(&self.store, id)
+    }
+
+    /// Indexes a song from a pre-computed [`AnalysisResult`], skipping the
+    /// decode step.  Used by the scanner to separate analysis (no lock) from
+    /// DB writes (lock held briefly).
+    pub fn index_from_result(
+        &mut self,
+        file_path: &str,
+        result: models::AnalysisResult,
+    ) -> Result<SongRecord, RecommenderError> {
+        let record = vector_store::index_from_result(&self.store, file_path, result)?;
+        if !self.vector_cache.iter().any(|(id, _)| id == &record.id) {
+            self.vector_cache
+                .push((record.id.clone(), record.feature_vector.to_weighted_vec()));
+        }
+        Ok(record)
+    }
+
+    /// Clears all indexed songs and path indices.  Use before a full re-scan.
+    pub fn clear_song_index(&mut self) -> Result<(), RecommenderError> {
+        // Remove all path:* keys from the default tree.
+        let mut path_keys = Vec::new();
+        for entry in self.store.db.iter() {
+            let (key, _) = entry.map_err(RecommenderError::DbError)?;
+            if key.starts_with(b"path:") {
+                path_keys.push(key);
+            }
+        }
+        for key in path_keys {
+            self.store.db.remove(key).map_err(RecommenderError::DbError)?;
+        }
+        // Clear the songs tree.
+        self.store.songs.clear().map_err(RecommenderError::DbError)?;
+        // Reset song count.
+        self.store.db.insert(b"meta:song_count", &0u64.to_le_bytes())
+            .map_err(RecommenderError::DbError)?;
+        // Clear in-memory vector cache.
+        self.vector_cache.clear();
+        self.store.db.flush().map_err(RecommenderError::DbError)?;
+        Ok(())
     }
 
     /// Starts a brand-new listening session, resetting the centroid and history.

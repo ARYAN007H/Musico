@@ -56,7 +56,7 @@ static HAMMING: LazyLock<Vec<f32>> = LazyLock::new(|| {
 ///
 /// Returns an [`AnalysisResult`] containing the feature vector, duration, and
 /// metadata tags.
-pub(crate) fn analyze_file(path: &str) -> Result<AnalysisResult, RecommenderError> {
+pub fn analyze_file(path: &str) -> Result<AnalysisResult, RecommenderError> {
     let file_path = Path::new(path);
     let fallback_title = file_path
         .file_stem()
