@@ -10,15 +10,15 @@ use musico_playback::{PlaybackEngine, PlaybackEvent, PlaybackStatus, SongInfo};
 use musico_playback::eq;
 use musico_recommender::{MusicRecommender, SongRecord, RecommendedSong, ListeningStats};
 
-use crate::state::{AppState, View, LibraryViewMode, ShuffleMode, RepeatMode, NormalizationMode, SortField};
-use crate::theme::{self, ColorPalette, FontMode, Palette};
+use crate::state::{AppState, View, LibraryViewMode, ShuffleMode, RepeatMode, NormalizationMode, SortField, SettingsTab};
+use crate::theme::{self, ColorPalette, FontMode};
 use crate::scanner;
 use crate::config::AppConfig;
 use crate::timer::{SleepTimer, TimerStatus};
 use crate::lyrics::{self, Lyrics};
 use crate::mpris::{self, MprisCommand, MprisMetadata};
 
-use crate::views::{now_playing, library, queue, settings};
+use crate::views::{now_playing, library, queue, settings_view};
 use crate::components::sidebar;
 
 #[derive(Clone)]
@@ -66,6 +66,7 @@ pub enum Message {
     ArtColorExtracted(Color),
     SetPalette(ColorPalette),
     SetFontMode(FontMode),
+    SetSettingsTab(SettingsTab),
 
     // Auto-update
     CheckForUpdate,
@@ -616,6 +617,9 @@ impl Application for Musico {
                 self.0.font_mode = mode;
                 self.save_config();
             }
+            Message::SetSettingsTab(tab) => {
+                self.0.active_settings_tab = tab;
+            }
 
             // ── Actions ───────────────────────────────────────────────
             Message::ToggleLike => {
@@ -1018,17 +1022,7 @@ impl Musico {
             ),
             View::Playlists => crate::views::playlists::playlists_view(&self.0),
             View::Settings => {
-                let general = settings(
-                    &self.0,
-                    Message::PickFolder,
-                    Message::ScanLibrary,
-                    |p| Message::SetPalette(p),
-                    |m| Message::SetFontMode(m),
-                    Message::CheckForUpdate,
-                    |url| Message::DownloadUpdate(url),
-                );
-                let audio = crate::views::settings::audio_settings(&self.0);
-                iced::widget::column![general, audio].spacing(20).into()
+                settings_view(&self.0)
             },
             View::Stats => {
                 // Auto-load stats on first visit.

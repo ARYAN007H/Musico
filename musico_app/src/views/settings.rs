@@ -1,22 +1,14 @@
 use iced::widget::{button, column, container, progress_bar, row, text, Space};
 use iced::{Alignment, Color, Element, Length};
-use crate::state::AppState;
-use crate::theme::{self, ColorPalette, FontMode, Palette, ALL_PALETTES, ALL_FONT_MODES};
+use crate::state::{AppState, SettingsTab};
+use crate::theme::{self, Palette, ALL_PALETTES, ALL_FONT_MODES};
 
-pub fn settings<'a, Message: 'a + Clone>(
-    state: &AppState,
-    on_pick_folder: Message,
-    on_scan: Message,
-    on_set_palette: impl Fn(ColorPalette) -> Message + 'a,
-    on_set_font_mode: impl Fn(FontMode) -> Message + 'a,
-    on_check_update: Message,
-    on_download_update: impl Fn(String) -> Message + 'a,
-) -> Element<'a, Message> {
+pub fn settings_view<'a>(state: &'a AppState) -> Element<'a, crate::app::Message> {
     let p = Palette::from_color_palette(&state.color_palette);
     let ctx = state.theme_ctx();
     let accent = state.art_tint;
 
-    let mut content = column![].spacing(28).padding(40);
+    let mut content = column![].spacing(24).padding(40);
 
     // Header
     content = content.push(
@@ -25,6 +17,56 @@ pub fn settings<'a, Message: 'a + Clone>(
             .size(theme::TEXT_HERO)
             .style(p.text_primary)
     );
+
+    // Tabs Row
+    let mut tab_row = row![].spacing(10);
+    for tab in &[SettingsTab::General, SettingsTab::Audio, SettingsTab::Themes] {
+        let is_selected = state.active_settings_tab == *tab;
+        let tab_label = match tab {
+            SettingsTab::General => "General",
+            SettingsTab::Audio => "Equalizer & Audio",
+            SettingsTab::Themes => "Themes & Effects",
+        };
+        tab_row = tab_row.push(
+            button(
+                text(tab_label).font(ctx.font_rounded).size(13.0)
+                    .style(if is_selected { accent } else { p.text_secondary })
+            )
+            .on_press(crate::app::Message::SetSettingsTab(*tab))
+            .padding([8, 16])
+            .style(iced::theme::Button::Custom(Box::new(PillToggleStyle {
+                active: is_selected,
+                accent,
+                bg: p.elevated,
+            })))
+        );
+    }
+    
+    content = content.push(tab_row);
+    content = content.push(Space::with_height(8));
+
+    // Tab content
+    let tab_content: Element<'a, crate::app::Message> = match state.active_settings_tab {
+        SettingsTab::General => general_tab(state, &p, &ctx, accent),
+        SettingsTab::Themes => themes_tab(state, &p, &ctx, accent),
+        SettingsTab::Audio => audio_tab(state, &p, &ctx, accent),
+    };
+
+    content = content.push(tab_content);
+
+    container(
+        iced::widget::scrollable(content)
+    ).width(Length::Fill).height(Length::Fill).into()
+}
+
+fn general_tab<'a>(
+    state: &'a AppState,
+    p: &Palette,
+    ctx: &theme::ThemeCtx,
+    accent: Color,
+) -> Element<'a, crate::app::Message> {
+    use crate::app::Message;
+    let mut content = column![].spacing(24);
 
     // Music Folder Section
     let folder_path = match &state.music_folder {
@@ -42,7 +84,7 @@ pub fn settings<'a, Message: 'a + Clone>(
                 .style(iced::theme::Container::Custom(Box::new(InputBgStyle(p.surface)))),
             Space::with_width(12),
             button(text("Change Folder").font(ctx.font_text).style(p.text_primary))
-                .on_press(on_pick_folder)
+                .on_press(Message::PickFolder)
                 .padding([12, 20])
                 .style(iced::theme::Button::Custom(Box::new(PrimaryBtnStyle(p.elevated, p.highlight))))
         ].align_items(Alignment::Center)
@@ -50,7 +92,7 @@ pub fn settings<'a, Message: 'a + Clone>(
 
     content = content.push(folder_section);
 
-    // Re-index Section — Enhanced with animated progress
+    // Re-index Section
     let mut index_content = column![
         text("Library Index").font(ctx.font_rounded).size(theme::TEXT_TITLE).style(p.text_primary),
         Space::with_height(12),
@@ -61,11 +103,9 @@ pub fn settings<'a, Message: 'a + Clone>(
         let progress = if total > 0 { done as f32 / total as f32 } else { 0.0 };
         let percent = (progress * 100.0) as u32;
         
-        // Spinning indicator character based on progress
         let spinner_chars = ["◐", "◓", "◑", "◒"];
         let spinner = spinner_chars[done % spinner_chars.len()];
 
-        // Status header with spinner and percentage
         index_content = index_content.push(
             row![
                 text(spinner).size(20.0).style(accent),
@@ -84,14 +124,12 @@ pub fn settings<'a, Message: 'a + Clone>(
 
         index_content = index_content.push(Space::with_height(8));
 
-        // Progress bar
         index_content = index_content.push(
             progress_bar(0.0..=1.0, progress)
                 .height(Length::Fixed(6.0))
                 .style(iced::theme::ProgressBar::Custom(Box::new(ProgressStyle(accent, p.surface))))
         );
 
-        // Hint text
         index_content = index_content.push(
             text("Analyzing audio features for smart recommendations...")
                 .font(ctx.font_text)
@@ -101,7 +139,6 @@ pub fn settings<'a, Message: 'a + Clone>(
     } else {
         let lib_count = state.library.len();
         if lib_count > 0 {
-            // Show song count with accent badge
             index_content = index_content.push(
                 row![
                     container(
@@ -129,7 +166,7 @@ pub fn settings<'a, Message: 'a + Clone>(
                     text("Re-index Library").font(ctx.font_text).style(p.text_primary),
                 ].align_items(Alignment::Center)
             )
-                .on_press(on_scan)
+                .on_press(Message::ScanLibrary)
                 .padding([12, 20])
                 .style(iced::theme::Button::Custom(Box::new(PrimaryBtnStyle(p.elevated, p.highlight))))
         );
@@ -138,7 +175,119 @@ pub fn settings<'a, Message: 'a + Clone>(
     let index_section = container(index_content).padding(24).style(theme::glass_card).width(Length::Fill);
     content = content.push(index_section);
 
-    // ─── Color Palette Section ───────────────────────────────────────────────
+    // Auto-Update Section
+    let update_content = {
+        use crate::state::UpdateStatus;
+        let mut col = column![
+            text("Updates").font(ctx.font_rounded).size(theme::TEXT_TITLE).style(p.text_primary),
+            Space::with_height(12),
+        ].spacing(8);
+
+        match &state.update_status {
+            UpdateStatus::Idle => {
+                col = col.push(
+                    button(
+                        text("Check for Updates").font(ctx.font_text).style(p.text_primary)
+                    )
+                    .on_press(Message::CheckForUpdate)
+                    .padding([12, 20])
+                    .style(iced::theme::Button::Custom(Box::new(PrimaryBtnStyle(p.elevated, p.highlight))))
+                );
+            }
+            UpdateStatus::Checking => {
+                col = col.push(
+                    text("Checking for updates...").font(ctx.font_text).size(theme::TEXT_BODY).style(p.text_muted)
+                );
+            }
+            UpdateStatus::Available { version, url } => {
+                col = col.push(
+                    text(format!("Update available: v{}", version))
+                        .font(ctx.font_text)
+                        .size(theme::TEXT_BODY)
+                        .style(accent)
+                );
+                col = col.push(Space::with_height(8));
+                col = col.push(
+                    button(
+                        text("Download & Install").font(ctx.font_text).style(p.text_primary)
+                    )
+                    .on_press(Message::DownloadUpdate(url.clone()))
+                    .padding([12, 20])
+                    .style(iced::theme::Button::Custom(Box::new(AccentBtnStyle(accent))))
+                );
+            }
+            UpdateStatus::Downloading => {
+                col = col.push(
+                    text("Downloading update...").font(ctx.font_text).size(theme::TEXT_BODY).style(accent)
+                );
+                col = col.push(
+                    progress_bar(0.0..=1.0, 0.5)
+                        .height(Length::Fixed(6.0))
+                        .style(iced::theme::ProgressBar::Custom(Box::new(ProgressStyle(accent, p.surface))))
+                );
+            }
+            UpdateStatus::Ready => {
+                col = col.push(
+                    text("✓ Update installed! Restart Musico to apply.")
+                        .font(ctx.font_text)
+                        .size(theme::TEXT_BODY)
+                        .style(Color::from_rgb8(158, 206, 106))
+                );
+            }
+            UpdateStatus::Error(msg) => {
+                col = col.push(
+                    text(msg)
+                        .font(ctx.font_text)
+                        .size(theme::TEXT_CAPTION)
+                        .style(if msg.contains('✓') { Color::from_rgb8(158, 206, 106) } else { Color::from_rgb8(224, 108, 117) })
+                );
+            }
+        }
+        col
+    };
+
+    let update_section = container(update_content).padding(24).style(theme::glass_card).width(Length::Fill);
+    content = content.push(update_section);
+
+    // Keyboard Shortcuts Section
+    let shortcuts_section = container(column![
+        text("Keyboard Shortcuts").font(ctx.font_rounded).size(theme::TEXT_TITLE).style(p.text_primary),
+        Space::with_height(12),
+        shortcut_row("Space", "Play / Pause", p, ctx),
+        shortcut_row("← / →", "Seek ±5 seconds", p, ctx),
+        shortcut_row("↑ / ↓", "Volume ±5%", p, ctx),
+        shortcut_row("N / P", "Next / Previous", p, ctx),
+        shortcut_row("S", "Cycle shuffle mode", p, ctx),
+        shortcut_row("R", "Cycle repeat mode", p, ctx),
+        shortcut_row("Esc", "Clear search / Now Playing", p, ctx),
+    ]).padding(24).style(theme::glass_card).width(Length::Fill);
+
+    content = content.push(shortcuts_section);
+
+    // About Section
+    let version = env!("CARGO_PKG_VERSION");
+    let about_section = container(column![
+        text("About").font(ctx.font_rounded).size(theme::TEXT_TITLE).style(p.text_primary),
+        Space::with_height(12),
+        text(format!("Musico v{}", version)).font(ctx.font_text).style(p.text_secondary),
+        text("Powered by Iced 0.12, Symphonia, and pure Rust.").font(ctx.font_text).size(theme::TEXT_CAPTION).style(p.text_muted),
+    ]).padding(24).style(theme::glass_card).width(Length::Fill);
+
+    content = content.push(about_section);
+
+    content.into()
+}
+
+fn themes_tab<'a>(
+    state: &'a AppState,
+    p: &Palette,
+    ctx: &theme::ThemeCtx,
+    accent: Color,
+) -> Element<'a, crate::app::Message> {
+    use crate::app::Message;
+    let mut content = column![].spacing(24);
+
+    // Color Palette Section
     let mut palette_row = row![].spacing(12);
 
     for palette in ALL_PALETTES.iter() {
@@ -166,7 +315,7 @@ pub fn settings<'a, Message: 'a + Clone>(
         let card = button(
             container(card_content).padding([10, 12]).center_x()
         )
-        .on_press(on_set_palette(pal))
+        .on_press(Message::SetPalette(pal))
         .style(iced::theme::Button::Custom(Box::new(PaletteCardStyle {
             is_selected,
             accent: palette.primary,
@@ -184,7 +333,7 @@ pub fn settings<'a, Message: 'a + Clone>(
 
     content = content.push(palette_section);
 
-    // ─── Font Mode Section ───────────────────────────────────────────────────
+    // Font Mode Section
     let mut font_row = row![].spacing(10);
 
     for mode in ALL_FONT_MODES.iter() {
@@ -201,7 +350,7 @@ pub fn settings<'a, Message: 'a + Clone>(
             .padding([10, 18])
             .center_x()
         )
-        .on_press(on_set_font_mode(m))
+        .on_press(Message::SetFontMode(m))
         .style(iced::theme::Button::Custom(Box::new(FontModeStyle {
             is_selected,
             accent,
@@ -219,123 +368,21 @@ pub fn settings<'a, Message: 'a + Clone>(
 
     content = content.push(font_section);
 
-    // Keyboard Shortcuts Section
-    let shortcuts_section = container(column![
-        text("Keyboard Shortcuts").font(ctx.font_rounded).size(theme::TEXT_TITLE).style(p.text_primary),
-        Space::with_height(12),
-        shortcut_row("Space", "Play / Pause", &p, &ctx),
-        shortcut_row("← / →", "Seek ±5 seconds", &p, &ctx),
-        shortcut_row("↑ / ↓", "Volume ±5%", &p, &ctx),
-        shortcut_row("N / P", "Next / Previous", &p, &ctx),
-        shortcut_row("S", "Cycle shuffle mode", &p, &ctx),
-        shortcut_row("R", "Cycle repeat mode", &p, &ctx),
-        shortcut_row("Esc", "Clear search / Now Playing", &p, &ctx),
-    ]).padding(24).style(theme::glass_card).width(Length::Fill);
-
-    content = content.push(shortcuts_section);
-
-    // ─── Auto-Update Section ─────────────────────────────────────────────────
-    let update_content = {
-        use crate::state::UpdateStatus;
-        let mut col = column![
-            text("Updates").font(ctx.font_rounded).size(theme::TEXT_TITLE).style(p.text_primary),
-            Space::with_height(12),
-        ].spacing(8);
-
-        match &state.update_status {
-            UpdateStatus::Idle => {
-                col = col.push(
-                    button(
-                        text("Check for Updates").font(ctx.font_text).style(p.text_primary)
-                    )
-                    .on_press(on_check_update)
-                    .padding([12, 20])
-                    .style(iced::theme::Button::Custom(Box::new(PrimaryBtnStyle(p.elevated, p.highlight))))
-                );
-            }
-            UpdateStatus::Checking => {
-                col = col.push(
-                    text("Checking for updates...").font(ctx.font_text).size(theme::TEXT_BODY).style(p.text_muted)
-                );
-            }
-            UpdateStatus::Available { version, url } => {
-                col = col.push(
-                    text(format!("Update available: v{}", version))
-                        .font(ctx.font_text)
-                        .size(theme::TEXT_BODY)
-                        .style(accent)
-                );
-                col = col.push(Space::with_height(8));
-                col = col.push(
-                    button(
-                        text("Download & Install").font(ctx.font_text).style(p.text_primary)
-                    )
-                    .on_press(on_download_update(url.clone()))
-                    .padding([12, 20])
-                    .style(iced::theme::Button::Custom(Box::new(AccentBtnStyle(accent))))
-                );
-            }
-            UpdateStatus::Downloading => {
-                col = col.push(
-                    text("Downloading update...").font(ctx.font_text).size(theme::TEXT_BODY).style(accent)
-                );
-                col = col.push(
-                    progress_bar(0.0..=1.0, 0.5)
-                        .height(Length::Fixed(6.0))
-                        .style(iced::theme::ProgressBar::Custom(Box::new(ProgressStyle(accent, p.surface))))
-                );
-            }
-            UpdateStatus::Ready => {
-                col = col.push(
-                    text("✓ Update installed! Restart Musico to apply.")
-                        .font(ctx.font_text)
-                        .size(theme::TEXT_BODY)
-                        .style(Color::from_rgb8(158, 206, 106)) // green
-                );
-            }
-            UpdateStatus::Error(msg) => {
-                col = col.push(
-                    text(msg)
-                        .font(ctx.font_text)
-                        .size(theme::TEXT_CAPTION)
-                        .style(if msg.contains('✓') { Color::from_rgb8(158, 206, 106) } else { Color::from_rgb8(224, 108, 117) })
-                );
-            }
-        }
-        col
-    };
-
-    let update_section = container(update_content).padding(24).style(theme::glass_card).width(Length::Fill);
-    content = content.push(update_section);
-
-    // About Section
-    let version = env!("CARGO_PKG_VERSION");
-    let about_section = container(column![
-        text("About").font(ctx.font_rounded).size(theme::TEXT_TITLE).style(p.text_primary),
-        Space::with_height(12),
-        text(format!("Musico v{}", version)).font(ctx.font_text).style(p.text_secondary),
-        text("Powered by Iced 0.12, Symphonia, and pure Rust.").font(ctx.font_text).size(theme::TEXT_CAPTION).style(p.text_muted),
-    ]).padding(24).style(theme::glass_card).width(Length::Fill);
-
-    content = content.push(about_section);
-
-    container(
-        iced::widget::scrollable(content)
-    ).width(Length::Fill).height(Length::Fill).into()
+    content.into()
 }
 
-/// Builds the EQ + Audio settings section with concrete Message type.
-/// Call this separately and push into a column alongside the generic settings.
-pub fn audio_settings<'a>(state: &'a AppState) -> iced::Element<'a, crate::app::Message> {
+fn audio_tab<'a>(
+    state: &'a AppState,
+    p: &Palette,
+    ctx: &theme::ThemeCtx,
+    accent: Color,
+) -> Element<'a, crate::app::Message> {
     use crate::app::Message;
     use crate::state::NormalizationMode;
     use musico_playback::eq::{ALL_PRESETS, BAND_LABELS};
+    use musico_playback::CrossfadeCurve;
 
-    let p = Palette::from_color_palette(&state.color_palette);
-    let ctx = state.theme_ctx();
-    let accent = state.art_tint;
-
-    let mut content = column![].spacing(20);
+    let mut content = column![].spacing(24);
 
     // ─── Equalizer Section ────────────────────────────────────────────────────
     let eq_status = if state.eq_enabled { "On" } else { "Off" };
@@ -485,8 +532,6 @@ pub fn audio_settings<'a>(state: &'a AppState) -> iced::Element<'a, crate::app::
     content = content.push(timer_section);
 
     // ─── Crossfade Section ───────────────────────────────────────────────────
-    use musico_playback::{CrossfadeCurve};
-
     let cf = &state.crossfade_config;
     let cf_status = if cf.enabled { "On" } else { "Off" };
 

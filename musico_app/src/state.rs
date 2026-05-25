@@ -20,6 +20,13 @@ pub enum View {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsTab {
+    General,
+    Themes,
+    Audio,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LibraryViewMode {
     Grid,
     List,
@@ -92,6 +99,7 @@ pub enum UpdateStatus {
 pub struct AppState {
     // Navigation
     pub active_view: View,
+    pub active_settings_tab: SettingsTab,
     #[allow(dead_code)]
     pub sidebar_collapsed: bool,
     pub window_width: f32,
@@ -200,6 +208,7 @@ impl AppState {
 
         Self {
             active_view: View::NowPlaying,
+            active_settings_tab: SettingsTab::General,
             sidebar_collapsed: false,
             window_width: 900.0,
             window_height: 600.0,
