@@ -158,18 +158,26 @@ fn general_tab<'a>(
             );
             index_content = index_content.push(Space::with_height(8));
         }
-        index_content = index_content.push(
-            button(
-                row![
-                    text("⟳").size(16.0).style(p.text_primary),
-                    Space::with_width(8),
-                    text("Re-index Library").font(ctx.font_text).style(p.text_primary),
-                ].align_items(Alignment::Center)
-            )
-                .on_press(Message::ScanLibrary)
-                .padding([12, 20])
-                .style(iced::theme::Button::Custom(Box::new(PrimaryBtnStyle(p.elevated, p.highlight))))
-        );
+        let btn_text_style = if state.music_folder.is_some() {
+            p.text_primary
+        } else {
+            p.text_muted
+        };
+        let mut reindex_btn = button(
+            row![
+                text("⟳").size(16.0).style(btn_text_style),
+                Space::with_width(8),
+                text("Re-index Library").font(ctx.font_text).style(btn_text_style),
+            ].align_items(Alignment::Center)
+        )
+            .padding([12, 20])
+            .style(iced::theme::Button::Custom(Box::new(PrimaryBtnStyle(p.elevated, p.highlight))));
+
+        if state.music_folder.is_some() {
+            reindex_btn = reindex_btn.on_press(Message::ScanLibrary);
+        }
+
+        index_content = index_content.push(reindex_btn);
     }
 
     let index_section = container(index_content).padding(24).style(theme::glass_card).width(Length::Fill);
@@ -686,6 +694,17 @@ impl iced::widget::button::StyleSheet for PrimaryBtnStyle {
     fn hovered(&self, _style: &Self::Style) -> iced::widget::button::Appearance {
         iced::widget::button::Appearance {
             background: Some(self.1.into()),
+            border: iced::Border {
+                color: iced::Color::TRANSPARENT,
+                width: 0.0,
+                radius: theme::RADIUS_MD.into(),
+            },
+            ..Default::default()
+        }
+    }
+    fn disabled(&self, _style: &Self::Style) -> iced::widget::button::Appearance {
+        iced::widget::button::Appearance {
+            background: Some(theme::with_alpha(self.0, 0.4).into()),
             border: iced::Border {
                 color: iced::Color::TRANSPARENT,
                 width: 0.0,

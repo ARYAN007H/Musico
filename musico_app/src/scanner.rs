@@ -38,8 +38,12 @@ pub async fn scan_and_index(
 
     for (i, path) in paths.iter().enumerate() {
         if let Some(path_str) = path.to_str() {
-            // Step 3a: Analyse OUTSIDE the lock (CPU-heavy, ~1-3s per file).
-            let analysis = musico_recommender::extractor::analyze_file(path_str);
+            let path_str_clone = path_str.to_string();
+            let analysis = tokio::task::spawn_blocking(move || {
+                musico_recommender::extractor::analyze_file(&path_str_clone)
+            })
+            .await
+            .unwrap();
 
             // Step 3b: If analysis succeeded, write to DB with a brief lock.
             if let Ok(result) = analysis {

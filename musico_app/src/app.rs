@@ -330,12 +330,12 @@ impl Application for Musico {
                 }
                 if let Some(rx) = &mut self.0.index_rx {
                     while let Ok(prog) = rx.try_recv() {
-                        cmds.push(Command::perform(async move { prog }, |p| Message::IndexProgress(p.0, p.1)));
+                        self.0.index_progress = prog;
                     }
                 }
                 if let Some(rx) = &mut self.0.cover_rx {
                     while let Ok(id) = rx.try_recv() {
-                        cmds.push(Command::perform(async { id }, Message::CoverCached));
+                        self.0.cached_covers.insert(id);
                     }
                 }
 
