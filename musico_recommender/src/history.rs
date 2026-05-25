@@ -33,8 +33,16 @@ fn listen_ratio_weight(ratio: f32) -> f32 {
 
 fn load_score_cache(store: &Store, song_id: &str) -> Result<SongScoreCache, RecommenderError> {
     match store.scores.get(song_id.as_bytes()).map_err(RecommenderError::DbError)? {
-        Some(bytes) => bincode::deserialize(&bytes)
-            .map_err(|e| RecommenderError::DecodeError(format!("score cache deserialize: {e}"))),
+        Some(bytes) => {
+            match bincode::deserialize::<SongScoreCache>(&bytes) {
+                Ok(cache) => Ok(cache),
+                Err(e) => {
+                    log::warn!("Corrupted score cache found in DB for song {}: {}. Resetting.", song_id, e);
+                    let _ = store.scores.remove(song_id.as_bytes());
+                    Ok(SongScoreCache::default())
+                }
+            }
+        }
         None => Ok(SongScoreCache::default()),
     }
 }

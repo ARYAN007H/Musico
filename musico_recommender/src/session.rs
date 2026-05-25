@@ -40,9 +40,14 @@ fn persist_session(store: &Store, state: &SessionState) -> Result<(), Recommende
 pub(crate) fn load_session(store: &Store) -> Result<Option<SessionState>, RecommenderError> {
     match store.sessions.get(b"current").map_err(RecommenderError::DbError)? {
         Some(bytes) => {
-            let state: SessionState = bincode::deserialize(&bytes)
-                .map_err(|e| RecommenderError::DecodeError(format!("session deserialize: {e}")))?;
-            Ok(Some(state))
+            match bincode::deserialize::<SessionState>(&bytes) {
+                Ok(state) => Ok(Some(state)),
+                Err(e) => {
+                    log::warn!("Corrupted session state: {}. Clearing and starting fresh.", e);
+                    let _ = store.sessions.remove(b"current");
+                    Ok(None)
+                }
+            }
         }
         None => Ok(None),
     }

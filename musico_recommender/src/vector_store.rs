@@ -173,10 +173,14 @@ pub(crate) fn index_from_result(
 pub(crate) fn get_all_songs(store: &Store) -> Result<Vec<SongRecord>, RecommenderError> {
     let mut songs = Vec::new();
     for entry in store.songs.iter() {
-        let (_, value) = entry.map_err(RecommenderError::DbError)?;
-        let record: SongRecord = bincode::deserialize(&value)
-            .map_err(|e| RecommenderError::DecodeError(format!("bincode deserialize: {e}")))?;
-        songs.push(record);
+        let (key, value) = entry.map_err(RecommenderError::DbError)?;
+        match bincode::deserialize::<SongRecord>(&value) {
+            Ok(record) => songs.push(record),
+            Err(e) => {
+                log::warn!("Corrupted song record in DB: {:?}: {}. Skipping.", key, e);
+                let _ = store.songs.remove(key);
+            }
+        }
     }
     Ok(songs)
 }
@@ -185,9 +189,14 @@ pub(crate) fn get_all_songs(store: &Store) -> Result<Vec<SongRecord>, Recommende
 pub(crate) fn get_song_by_id(store: &Store, song_id: &str) -> Result<Option<SongRecord>, RecommenderError> {
     match store.songs.get(song_id.as_bytes()).map_err(RecommenderError::DbError)? {
         Some(bytes) => {
-            let record: SongRecord = bincode::deserialize(&bytes)
-                .map_err(|e| RecommenderError::DecodeError(format!("bincode deserialize: {e}")))?;
-            Ok(Some(record))
+            match bincode::deserialize::<SongRecord>(&bytes) {
+                Ok(record) => Ok(Some(record)),
+                Err(e) => {
+                    log::warn!("Corrupted song record for ID {}: {}. Skipping.", song_id, e);
+                    let _ = store.songs.remove(song_id.as_bytes());
+                    Ok(None)
+                }
+            }
         }
         None => Ok(None),
     }
