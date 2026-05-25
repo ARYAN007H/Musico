@@ -3,7 +3,7 @@
 
 use iced::{
     Background, Border, Color, Shadow,
-    widget::{button, container, slider},
+    widget::{button, container, slider, scrollable},
 };
 
 // ─── Base Color Constants ───────────────────────────────────────────────────
@@ -361,15 +361,15 @@ impl button::StyleSheet for NavButton {
     fn active(&self, _style: &Self::Style) -> button::Appearance {
         button::Appearance {
             background: if self.is_active {
-                Some(Background::Color(with_alpha(self.accent, 0.12)))
+                Some(Background::Color(with_alpha(ELEVATED, 0.4)))
             } else {
                 None
             },
             text_color: if self.is_active { self.accent } else { TEXT_SECONDARY },
             border: Border {
                 radius: 24.0.into(),
-                color: if self.is_active { self.accent } else { Color::TRANSPARENT },
-                width: if self.is_active { 0.0 } else { 0.0 },
+                color: if self.is_active { with_alpha(self.accent, 0.3) } else { Color::TRANSPARENT },
+                width: if self.is_active { 1.0 } else { 0.0 },
             },
             ..Default::default()
         }
@@ -378,14 +378,19 @@ impl button::StyleSheet for NavButton {
     fn hovered(&self, _style: &Self::Style) -> button::Appearance {
         button::Appearance {
             background: Some(Background::Color(if self.is_active {
-                with_alpha(self.accent, 0.18)
+                with_alpha(ELEVATED, 0.6)
             } else {
-                with_alpha(ELEVATED, 0.8)
+                with_alpha(ELEVATED, 0.3)
             })),
             text_color: if self.is_active { self.accent } else { TEXT_PRIMARY },
             border: Border {
                 radius: 24.0.into(),
-                ..Default::default()
+                color: if self.is_active {
+                    with_alpha(self.accent, 0.5)
+                } else {
+                    with_alpha(BORDER_SUBTLE, 0.5)
+                },
+                width: 1.0,
             },
             ..Default::default()
         }
@@ -450,11 +455,12 @@ impl button::StyleSheet for AccentTransportButton {
 
     fn active(&self, _style: &Self::Style) -> button::Appearance {
         button::Appearance {
-            background: None,
+            background: Some(Background::Color(with_alpha(ELEVATED, 0.4))),
             text_color: TEXT_SECONDARY,
             border: Border {
                 radius: 50.0.into(),
-                ..Default::default()
+                color: with_alpha(BORDER_SUBTLE, 0.5),
+                width: 1.0,
             },
             ..Default::default()
         }
@@ -462,11 +468,17 @@ impl button::StyleSheet for AccentTransportButton {
 
     fn hovered(&self, _style: &Self::Style) -> button::Appearance {
         button::Appearance {
-            background: Some(Background::Color(with_alpha(self.0, 0.12))),
+            background: Some(Background::Color(with_alpha(ELEVATED, 0.6))),
             text_color: TEXT_PRIMARY,
             border: Border {
                 radius: 50.0.into(),
-                ..Default::default()
+                color: with_alpha(self.0, 0.6),
+                width: 1.0,
+            },
+            shadow: Shadow {
+                color: with_alpha(self.0, 0.35),
+                offset: iced::Vector { x: 0.0, y: 0.0 },
+                blur_radius: 12.0,
             },
             ..Default::default()
         }
@@ -517,5 +529,48 @@ impl slider::StyleSheet for VolumeSliderStyle {
 
     fn dragging(&self, style: &Self::Style) -> slider::Appearance {
         self.hovered(style)
+    }
+}
+
+/// A sleek, minimal scrollbar for modern lists and grids
+pub struct SleekScrollable;
+
+impl scrollable::StyleSheet for SleekScrollable {
+    type Style = iced::Theme;
+
+    fn active(&self, _style: &Self::Style) -> scrollable::Appearance {
+        scrollable::Appearance {
+            container: Default::default(),
+            gap: None,
+            scrollbar: scrollable::Scrollbar {
+                background: None,
+                border: Border::default(),
+                scroller: scrollable::Scroller {
+                    color: with_alpha(Color::WHITE, 0.12),
+                    border: Border {
+                        radius: 2.0.into(),
+                        ..Default::default()
+                    },
+                },
+            },
+        }
+    }
+
+    fn hovered(&self, _style: &Self::Style, _is_mouse_over_scrollbar: bool) -> scrollable::Appearance {
+        scrollable::Appearance {
+            container: Default::default(),
+            gap: None,
+            scrollbar: scrollable::Scrollbar {
+                background: Some(with_alpha(Color::WHITE, 0.05).into()),
+                border: Border::default(),
+                scroller: scrollable::Scroller {
+                    color: with_alpha(Color::WHITE, 0.25),
+                    border: Border {
+                        radius: 2.0.into(),
+                        ..Default::default()
+                    },
+                },
+            },
+        }
     }
 }

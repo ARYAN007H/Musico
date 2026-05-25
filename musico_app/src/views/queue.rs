@@ -144,7 +144,8 @@ pub fn queue<'a, Message: 'a + Clone>(
         let mut recs_col = column![].spacing(2);
         
         for (i, rec) in state.recommendations.iter().enumerate() {
-            let row_el = song_row(&rec.record, i, false, &on_play_recommendation, Some(&on_queue_recommendation), accent);
+            let is_cached = state.cached_covers.contains(&rec.record.id);
+            let row_el = song_row(&rec.record, i, false, is_cached, &on_play_recommendation, Some(&on_queue_recommendation), accent);
             
             // Similarity indicator dot
             let dot_color = if rec.final_score > 0.8 {

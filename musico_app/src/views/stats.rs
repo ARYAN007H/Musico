@@ -138,9 +138,16 @@ pub fn stats_view<'a>(state: &'a AppState) -> Element<'a, Message> {
                 container(column![
                     text("Daily Listening").font(ctx.font_rounded).size(theme::TEXT_TITLE).style(p.text_primary),
                     Space::with_height(12),
-                    scrollable(heatmap_cols).direction(iced::widget::scrollable::Direction::Horizontal(
+                    scrollable(
+                        container(heatmap_cols).padding([0, 0, 8, 0])
+                    )
+                    .direction(iced::widget::scrollable::Direction::Horizontal(
                         iced::widget::scrollable::Properties::default()
-                    )),
+                            .width(4.0)
+                            .margin(2.0)
+                            .scroller_width(4.0)
+                    ))
+                    .style(iced::theme::Scrollable::Custom(Box::new(theme::SleekScrollable))),
                 ]).padding(20).style(theme::glass_card).width(Length::Fill)
             );
         }

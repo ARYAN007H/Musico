@@ -124,6 +124,9 @@ pub enum Message {
     // ── Plan 5: Library Sort ────────────────────────────────────────
     SetSortField(SortField),
     ToggleSortOrder,
+
+    // Cover Cache
+    CoverCached(String),
 }
 
 impl std::fmt::Debug for Message {
@@ -221,6 +224,7 @@ impl Application for Musico {
             Message::LoadAllSongs(songs) => {
                 self.0.library = songs.clone();
                 self.0.filtered_library = songs.clone();
+                self.trigger_cover_extraction();
                 // Auto-scan if library is empty but music folder is set.
                 if songs.is_empty() {
                     if let Some(folder) = &self.0.music_folder {
@@ -326,6 +330,11 @@ impl Application for Musico {
                 if let Some(rx) = &mut self.0.index_rx {
                     while let Ok(prog) = rx.try_recv() {
                         cmds.push(Command::perform(async move { prog }, |p| Message::IndexProgress(p.0, p.1)));
+                    }
+                }
+                if let Some(rx) = &mut self.0.cover_rx {
+                    while let Ok(id) = rx.try_recv() {
+                        cmds.push(Command::perform(async { id }, Message::CoverCached));
                     }
                 }
 
@@ -533,6 +542,7 @@ impl Application for Musico {
                 self.0.is_indexing = false;
                 self.0.library = records.clone();
                 self.0.filtered_library = records;
+                self.trigger_cover_extraction();
             }
 
             // ── Recommendations ───────────────────────────────────────
@@ -873,6 +883,9 @@ impl Application for Musico {
                 self.0.sort_ascending = !self.0.sort_ascending;
                 self.sort_library();
             }
+            Message::CoverCached(id) => {
+                self.0.cached_covers.insert(id);
+            }
         }
         Command::none()
     }
@@ -1178,6 +1191,25 @@ impl Musico {
             if let Some(engine) = &self.0.playback {
                 let _ = engine.play(song_info);
             }
+        }
+    }
+
+    fn trigger_cover_extraction(&self) {
+        if let Some(tx) = &self.0.cover_tx {
+            let tx = tx.clone();
+            let library = self.0.library.clone();
+            tokio::spawn(async move {
+                for song in library {
+                    let song_id = song.id.clone();
+                    let file_path = song.file_path.clone();
+                    let tx_clone = tx.clone();
+                    tokio::task::spawn_blocking(move || {
+                        if crate::covers::ensure_cover_cached(&song_id, &file_path).is_some() {
+                            let _ = tx_clone.send(song_id);
+                        }
+                    }).await.ok();
+                }
+            });
         }
     }
 

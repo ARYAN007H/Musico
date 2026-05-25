@@ -109,16 +109,7 @@ fn nav_item<'a>(
 
         let content = content.padding([10, 14]);
 
-        if is_active {
-            // Active item: accent left bar + tinted bg
-            row![
-                container(Space::new(Length::Fixed(3.0), Length::Fixed(32.0)))
-                    .style(iced::theme::Container::Custom(Box::new(AccentBarStyle(accent)))),
-                container(content).width(Length::Fill),
-            ].align_items(Alignment::Center).into()
-        } else {
-            content.into()
-        }
+        content.into()
     };
 
     let btn = button(inner)
@@ -152,22 +143,7 @@ impl iced::widget::container::StyleSheet for BadgePillStyle {
     }
 }
 
-// ─── Accent left bar style ───────────────────────────────────────────────────
 
-struct AccentBarStyle(iced::Color);
-impl iced::widget::container::StyleSheet for AccentBarStyle {
-    type Style = iced::Theme;
-    fn appearance(&self, _style: &Self::Style) -> iced::widget::container::Appearance {
-        iced::widget::container::Appearance {
-            background: Some(Background::Color(self.0)),
-            border: Border {
-                radius: 2.0.into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        }
-    }
-}
 
 // ─── Now-playing mini card (bottom of sidebar above settings) ─────────────────
 

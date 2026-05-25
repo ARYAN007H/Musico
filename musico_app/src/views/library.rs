@@ -205,7 +205,8 @@ pub fn library<'a>(
 
                 for (i, song) in songs.iter().enumerate() {
                     let is_playing = song.id == current_id;
-                    col = col.push(song_row(song, i, is_playing, &on_play, Some(&on_queue), accent));
+                    let is_cached = state.cached_covers.contains(&song.id);
+                    col = col.push(song_row(song, i, is_playing, is_cached, &on_play, Some(&on_queue), accent));
                 }
 
                 container(scrollable(col.padding([0, 40, 40, 40]))).height(Length::Fill).into()
@@ -219,7 +220,8 @@ pub fn library<'a>(
                 let mut items_in_row = 0;
 
                 for song in songs {
-                    current_row = current_row.push(grid_card(song, art_size, &on_play, accent, &ctx));
+                    let is_cached = state.cached_covers.contains(&song.id);
+                    current_row = current_row.push(grid_card(song, art_size, &on_play, accent, &ctx, is_cached));
                     items_in_row += 1;
 
                     if items_in_row == columns {
@@ -250,23 +252,33 @@ fn grid_card<'a, Message: 'a + Clone>(
     on_play: &impl Fn(SongRecord) -> Message,
     accent: Color,
     ctx: &theme::ThemeCtx,
+    is_cached: bool,
 ) -> Element<'a, Message> {
     let p = Palette::default_palette();
 
-    let art_placeholder = container(
+    let art_content: Element<'a, Message> = if is_cached {
+        let cache_path = crate::covers::get_cover_path(&song.id);
+        iced::widget::image(iced::widget::image::Handle::from_path(cache_path))
+            .width(Length::Fixed(art_size))
+            .height(Length::Fixed(art_size))
+            .into()
+    } else {
         iced::widget::svg(iced::widget::svg::Handle::from_memory(crate::icons::LIBRARY))
             .width(Length::Fixed(art_size * 0.3))
             .height(Length::Fixed(art_size * 0.3))
             .style(iced::theme::Svg::Custom(Box::new(crate::theme::SvgStyle(theme::with_alpha(accent, 0.4)))))
-    )
-    .width(Length::Fixed(art_size))
-    .height(Length::Fixed(art_size))
-    .center_x()
-    .center_y()
-    .style(iced::theme::Container::Custom(Box::new(GridArtStyle {
-        radius: ctx.radius_md,
-        bg: theme::with_alpha(p.elevated, 0.5),
-    })));
+            .into()
+    };
+
+    let art_display = container(art_content)
+        .width(Length::Fixed(art_size))
+        .height(Length::Fixed(art_size))
+        .center_x()
+        .center_y()
+        .style(iced::theme::Container::Custom(Box::new(GridArtStyle {
+            radius: ctx.radius_md,
+            bg: theme::with_alpha(p.elevated, 0.5),
+        })));
 
     let title = text(&song.title).font(ctx.font_text).size(theme::TEXT_BODY).style(p.text_primary);
     let artist = text(&song.artist).font(ctx.font_text).size(theme::TEXT_CAPTION).style(p.text_muted);
@@ -275,7 +287,7 @@ fn grid_card<'a, Message: 'a + Clone>(
 
     button(
         column![
-            art_placeholder,
+            art_display,
             Space::with_height(8),
             title,
             artist,

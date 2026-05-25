@@ -1,6 +1,7 @@
 mod app;
 mod components;
 mod config;
+mod covers;
 mod icons;
 mod lyrics;
 mod mpris;

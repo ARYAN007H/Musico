@@ -174,11 +174,17 @@ pub struct AppState {
     pub recommender: Option<Arc<Mutex<MusicRecommender>>>,
     pub playback: Option<Arc<PlaybackEngine>>,
     pub index_rx: Option<tokio::sync::mpsc::Receiver<(usize, usize)>>,
+
+    // Cover Cache
+    pub cached_covers: std::collections::HashSet<String>,
+    pub cover_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
+    pub cover_rx: Option<tokio::sync::mpsc::UnboundedReceiver<String>>,
 }
 
 impl AppState {
     pub fn new() -> Self {
         let config = AppConfig::load();
+        let (cover_tx, cover_rx) = tokio::sync::mpsc::unbounded_channel();
 
         let library_view_mode = if config.library_view_mode == "list" {
             LibraryViewMode::List
@@ -269,6 +275,24 @@ impl AppState {
             recommender: None,
             playback: None,
             index_rx: None,
+
+            cached_covers: {
+                let mut set = std::collections::HashSet::new();
+                let cache_dir = crate::covers::cover_cache_dir();
+                if let Ok(entries) = std::fs::read_dir(&cache_dir) {
+                    for entry in entries.flatten() {
+                        if let Some(name) = entry.file_name().to_str() {
+                            if name.ends_with(".jpg") {
+                                let id = name.trim_end_matches(".jpg").to_string();
+                                set.insert(id);
+                            }
+                        }
+                    }
+                }
+                set
+            },
+            cover_tx: Some(cover_tx),
+            cover_rx: Some(cover_rx),
         }
     }
 

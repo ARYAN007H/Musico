@@ -378,10 +378,16 @@ pub fn audio_settings<'a>(state: &'a AppState) -> iced::Element<'a, crate::app::
         );
     }
     eq_section = eq_section.push(
-        iced::widget::scrollable(preset_row)
-            .direction(iced::widget::scrollable::Direction::Horizontal(
-                iced::widget::scrollable::Properties::default()
-            ))
+        iced::widget::scrollable(
+            container(preset_row).padding([0, 0, 8, 0])
+        )
+        .direction(iced::widget::scrollable::Direction::Horizontal(
+            iced::widget::scrollable::Properties::default()
+                .width(4.0)
+                .margin(2.0)
+                .scroller_width(4.0)
+        ))
+        .style(iced::theme::Scrollable::Custom(Box::new(theme::SleekScrollable)))
     );
 
     // EQ Band labels row.

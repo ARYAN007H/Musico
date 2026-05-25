@@ -39,17 +39,20 @@ pub fn now_playing<'a, Message: 'a + Clone>(
         return empty_state(&p, &ctx, accent);
     }
 
-    // Album Art — scale to available space
+    // Album Art — circular with size scaling
     let art_size = (state.window_height * 0.38).clamp(180.0, 360.0);
     
     let art_handle = state.cached_art_handle.clone();
     
-    let art = art_canvas(art_handle, art_size, ctx.radius_lg + 8.0, accent);
+    let art = art_canvas(art_handle, art_size, art_size / 2.0, accent);
     
-    // Deeper glow ring around album art
+    // Deeper circular glow ring around album art
     let art_container = container(art)
         .padding(8)
-        .style(iced::theme::Container::Custom(Box::new(GlowStyle(accent))));
+        .style(iced::theme::Container::Custom(Box::new(GlowStyle {
+            color: accent,
+            radius: art_size / 2.0 + 8.0,
+        })));
 
     let mut content = column![].align_items(Alignment::Center).spacing(18);
 
@@ -110,8 +113,14 @@ pub fn now_playing<'a, Message: 'a + Clone>(
     .width(Length::Fill)
     .align_items(Alignment::Center);
 
+    // Waveform visualizer (seeded by song ID for visual consistency)
+    let song_id = state.current_song.as_ref().map(|s| s.id.as_str()).unwrap_or("default");
+    let waveform = waveform_visualizer(song_id, state.position_secs, state.duration_secs, accent, &p);
+
     // Seek bar + timestamps
     let seek_container = column![
+        waveform,
+        Space::with_height(10),
         seek_bar(state.position_secs, state.duration_secs, accent, on_seek),
         row![
             text(format_time(state.position_secs)).font(ctx.font_rounded).size(11.0).style(p.text_secondary),
@@ -282,10 +291,12 @@ pub fn now_playing<'a, Message: 'a + Clone>(
         ].spacing(10).width(Length::Fill);
 
         for (i, rec) in state.recommendations.iter().take(5).enumerate() {
+            let is_cached = state.cached_covers.contains(&rec.record.id);
             recs_col = recs_col.push(song_row(
                 &rec.record,
                 i,
                 false,
+                is_cached,
                 &on_play_recommendation,
                 Some(&on_queue_recommendation),
                 accent,
@@ -392,20 +403,21 @@ fn play_button<'a, Message: 'a + Clone>(
 
 // ─── Styles ──────────────────────────────────────────────────────────────────
 
-struct GlowStyle(iced::Color);
+struct GlowStyle { color: Color, radius: f32 }
 impl iced::widget::container::StyleSheet for GlowStyle {
     type Style = iced::Theme;
     fn appearance(&self, _style: &Self::Style) -> iced::widget::container::Appearance {
         iced::widget::container::Appearance {
-            background: Some(iced::Color { a: 0.20, ..self.0 }.into()),
+            background: Some(iced::Color { a: 0.08, ..self.color }.into()),
             border: iced::Border {
-                radius: 32.0.into(),
-                ..Default::default()
+                radius: self.radius.into(),
+                color: theme::with_alpha(self.color, 0.4),
+                width: 2.0,
             },
             shadow: iced::Shadow {
-                color: iced::Color { a: 0.5, ..self.0 },
-                offset: iced::Vector { x: 0.0, y: 24.0 },
-                blur_radius: 100.0,
+                color: iced::Color { a: 0.35, ..self.color },
+                offset: iced::Vector { x: 0.0, y: 12.0 },
+                blur_radius: 60.0,
             },
             ..Default::default()
         }
@@ -506,6 +518,74 @@ impl iced::widget::container::StyleSheet for NowPlayingBgStyle {
                 color: iced::Color { a: 0.2, ..self.0 },
                 offset: iced::Vector { x: 0.0, y: 0.0 },
                 blur_radius: 60.0,
+            },
+            ..Default::default()
+        }
+    }
+}
+
+// ─── Waveform Visualizer Component ──────────────────────────────────────────
+
+pub fn waveform_visualizer<'a, Message: 'a + Clone>(
+    song_id: &str,
+    position_secs: f32,
+    duration_secs: f32,
+    accent: Color,
+    p: &Palette,
+) -> Element<'a, Message> {
+    let progress = if duration_secs > 0.0 { position_secs / duration_secs } else { 0.0 };
+    
+    // Hash the song_id to get a stable seed
+    let mut hash = 0u64;
+    for c in song_id.chars() {
+        hash = hash.wrapping_mul(31).wrapping_add(c as u64);
+    }
+    
+    let mut rng_val = hash;
+    let num_bars = 40;
+    
+    let mut bars = iced::widget::row![].spacing(3).align_items(Alignment::Center);
+    
+    for i in 0..num_bars {
+        // LCG random height between 6 and 28
+        rng_val = rng_val.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        let height = 6.0 + (rng_val % 22) as f32;
+        
+        let bar_progress = i as f32 / num_bars as f32;
+        let color = if bar_progress <= progress {
+            // Gradient mix between accent and secondary
+            let mix = i as f32 / num_bars as f32;
+            let r = accent.r * (1.0 - mix) + 0.769 * mix; // mix with secondary
+            let g = accent.g * (1.0 - mix) + 0.710 * mix;
+            let b = accent.b * (1.0 - mix) + 0.992 * mix;
+            Color::from_rgb(r, g, b)
+        } else {
+            theme::with_alpha(p.text_muted, 0.25)
+        };
+        
+        bars = bars.push(
+            container(Space::new(Length::Fixed(4.0), Length::Fixed(height)))
+                .style(iced::theme::Container::Custom(Box::new(WaveformBarStyle(color))))
+        );
+    }
+    
+    container(bars)
+        .width(Length::Fill)
+        .height(Length::Fixed(32.0))
+        .center_x()
+        .center_y()
+        .into()
+}
+
+struct WaveformBarStyle(Color);
+impl iced::widget::container::StyleSheet for WaveformBarStyle {
+    type Style = iced::Theme;
+    fn appearance(&self, _: &Self::Style) -> iced::widget::container::Appearance {
+        iced::widget::container::Appearance {
+            background: Some(self.0.into()),
+            border: iced::Border {
+                radius: 2.0.into(),
+                ..Default::default()
             },
             ..Default::default()
         }

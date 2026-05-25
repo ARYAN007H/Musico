@@ -240,6 +240,7 @@ mod tests {
             duration_secs: 180,
             feature_vector: dummy_fv,
             indexed_at: Utc::now(),
+            replay_gain_db: 0.0,
         };
 
         let pool: Vec<RecommendedSong> = (0..10)

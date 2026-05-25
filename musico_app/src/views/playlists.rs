@@ -140,8 +140,9 @@ pub fn playlists_view<'a>(state: &'a AppState) -> Element<'a, Message> {
                     let mut song_list = column![].spacing(2).padding([0, 0, 0, 16]);
                     for (j, song) in resolved.iter().take(50).enumerate() {
                         let is_playing = song.id == current_id;
+                        let is_cached = state.cached_covers.contains(&song.id);
                         song_list = song_list.push(song_row(
-                            song, j, is_playing,
+                            song, j, is_playing, is_cached,
                             &|s: musico_recommender::SongRecord| Message::PlaySong(s),
                             Some(&|s: musico_recommender::SongRecord| Message::AddToQueue(s)),
                             accent,

@@ -9,6 +9,7 @@ pub fn song_row<'a, Message: 'a + Clone>(
     song: &SongRecord,
     index: usize,
     is_playing: bool,
+    is_cached: bool,
     on_play: impl Fn(SongRecord) -> Message,
     on_queue: Option<impl Fn(SongRecord) -> Message>,
     accent: Color,
@@ -43,7 +44,7 @@ pub fn song_row<'a, Message: 'a + Clone>(
             .into()
     };
 
-    // ── Thumbnail placeholder ────────────────────────────────────────────
+    // ── Thumbnail placeholder / cover art ─────────────────────────────────
     let thumb_bg = if is_playing {
         theme::with_alpha(accent, 0.15)
     } else {
@@ -56,22 +57,31 @@ pub fn song_row<'a, Message: 'a + Clone>(
         theme::with_alpha(theme::TEXT_MUTED, 0.4)
     };
 
-    let thumb = container(
+    let thumb_content: Element<'a, Message> = if is_cached {
+        let cache_path = crate::covers::get_cover_path(&song.id);
+        iced::widget::image(iced::widget::image::Handle::from_path(cache_path))
+            .width(Length::Fixed(44.0))
+            .height(Length::Fixed(44.0))
+            .into()
+    } else {
         svg(svg::Handle::from_memory(icons::LIBRARY))
             .width(Length::Fixed(20.0))
             .height(Length::Fixed(20.0))
-            .style(iced::theme::Svg::Custom(Box::new(theme::SvgStyle(thumb_icon_color)))),
-    )
-    .width(Length::Fixed(44.0))
-    .height(Length::Fixed(44.0))
-    .center_x()
-    .center_y()
-    .style(iced::theme::Container::Custom(Box::new(ThumbStyle {
-        radius: 8.0,
-        bg: thumb_bg,
-        accent,
-        is_playing,
-    })));
+            .style(iced::theme::Svg::Custom(Box::new(theme::SvgStyle(thumb_icon_color))))
+            .into()
+    };
+
+    let thumb = container(thumb_content)
+        .width(Length::Fixed(44.0))
+        .height(Length::Fixed(44.0))
+        .center_x()
+        .center_y()
+        .style(iced::theme::Container::Custom(Box::new(ThumbStyle {
+            radius: 8.0,
+            bg: thumb_bg,
+            accent,
+            is_playing,
+        })));
 
     // ── Song info ────────────────────────────────────────────────────────
     let title_color = if is_playing { accent } else { p.text_primary };
