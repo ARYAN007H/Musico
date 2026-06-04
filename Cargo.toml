@@ -2,6 +2,7 @@
 members = [
     "musico_recommender",
     "musico_playback",
-    "musico_app"
+    "musico_app",
+    "src-tauri"
 ]
 resolver = "2"

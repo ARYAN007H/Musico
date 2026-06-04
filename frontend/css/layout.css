@@ -1,0 +1,295 @@
+/* ══════════════════════════════════════════════════════════════════════════════
+   MUSICO — Layout Shell
+   App shell, bottom nav pill, mini player strip
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ─── App Shell ─────────────────────────────────────────────────────────────── */
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--surface);
+  position: relative;
+}
+
+#main-content {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ─── Bottom Navigation Pill ────────────────────────────────────────────────── */
+
+.bottom-nav-pill {
+  position: fixed;
+  bottom: var(--space-16);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: var(--z-nav);
+
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-6);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  box-shadow: var(--neu-raised-lg), 0 8px 32px rgba(0,0,0,0.08);
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-6);
+  padding: var(--space-10) var(--space-16);
+  border-radius: var(--radius-pill);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-display);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition: all var(--duration-normal) var(--ease-out);
+  white-space: nowrap;
+  user-select: none;
+  -webkit-user-select: none;
+  outline: none;
+  position: relative;
+}
+
+.nav-item svg {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  transition: color var(--duration-normal) var(--ease-out);
+}
+
+.nav-item span {
+  transition: opacity var(--duration-normal) var(--ease-out);
+}
+
+.nav-item:hover {
+  color: var(--text-secondary);
+  background: var(--accent-tint);
+}
+
+.nav-item.active {
+  background: var(--surface-inset);
+  box-shadow: var(--neu-inset-sm);
+  color: var(--accent);
+  font-weight: var(--weight-semi);
+}
+
+.nav-item.active svg {
+  color: var(--accent);
+}
+
+/* Nav badge */
+.nav-item .nav-badge {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  width: 7px;
+  height: 7px;
+  background: var(--accent);
+  border-radius: var(--radius-circle);
+  border: 2px solid var(--surface-raised);
+}
+
+/* ─── Mini Player Strip ─────────────────────────────────────────────────────── */
+
+.mini-player {
+  position: fixed;
+  bottom: 78px; /* Above nav pill */
+  left: var(--space-16);
+  right: var(--space-16);
+  z-index: var(--z-mini-player);
+
+  display: flex;
+  align-items: center;
+  gap: var(--space-12);
+  padding: var(--space-10) var(--space-16);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  box-shadow: var(--neu-raised), 0 4px 20px rgba(0,0,0,0.06);
+  transition: opacity var(--duration-normal) var(--ease-out),
+              transform var(--duration-normal) var(--ease-out);
+  overflow: hidden;
+}
+
+.mini-player.hidden {
+  opacity: 0;
+  transform: translateY(8px);
+  pointer-events: none;
+}
+
+/* Progress line at top of mini player */
+.mini-player::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 3px;
+  width: var(--mini-progress, 0%);
+  background: linear-gradient(90deg, var(--accent), var(--accent-secondary));
+  border-radius: 2px 2px 0 0;
+  transition: width 0.25s linear;
+}
+
+/* Mini vinyl disc */
+.mini-vinyl {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-circle);
+  background: var(--vinyl-color);
+  flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+  box-shadow: var(--neu-raised-sm);
+}
+
+.mini-vinyl-art {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-circle);
+  background: var(--surface-deep);
+  border: 2px solid rgba(255,255,255,0.08);
+  overflow: hidden;
+}
+
+.mini-vinyl-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.mini-vinyl-hole {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-circle);
+  background: var(--surface);
+  z-index: 2;
+}
+
+/* Mini vinyl grooves */
+.mini-vinyl::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border-radius: var(--radius-circle);
+  border: 1px solid rgba(255,255,255,0.04);
+}
+
+/* Mini song info */
+.mini-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mini-title {
+  font-size: var(--text-body);
+  font-weight: var(--weight-medium);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mini-artist {
+  font-size: var(--text-micro);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Mini controls */
+.mini-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  flex-shrink: 0;
+}
+
+.mini-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-circle);
+  border: none;
+  background: var(--surface-raised);
+  box-shadow: var(--neu-raised-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--duration-fast) var(--ease-out);
+}
+
+.mini-btn:hover {
+  color: var(--text-primary);
+  box-shadow: var(--neu-raised);
+}
+
+.mini-btn:active {
+  box-shadow: var(--neu-inset-sm);
+  background: var(--surface-inset);
+}
+
+.mini-btn.play-btn {
+  background: var(--accent);
+  color: var(--text-on-accent);
+  box-shadow: 2px 2px 6px var(--accent-shadow), -1px -1px 4px var(--shadow-light);
+}
+
+.mini-btn.play-btn:active {
+  box-shadow: inset 2px 2px 4px rgba(0,0,0,0.2);
+}
+
+.mini-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ─── Responsive ────────────────────────────────────────────────────────────── */
+
+@media (max-width: 700px) {
+  .nav-item span {
+    display: none;
+  }
+
+  .nav-item {
+    padding: var(--space-10) var(--space-12);
+  }
+
+  .bottom-nav-pill {
+    left: var(--space-12);
+    right: var(--space-12);
+    transform: none;
+    justify-content: space-around;
+  }
+
+  .mini-player {
+    bottom: 72px;
+    left: var(--space-8);
+    right: var(--space-8);
+  }
+
+  .mini-info {
+    display: none;
+  }
+}
