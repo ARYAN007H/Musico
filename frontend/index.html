@@ -124,6 +124,12 @@
           <div class="volume-label" id="vol-label">68%</div>
         </div>
 
+        <!-- Lyrics -->
+        <div class="recs-section" id="lyrics-section" style="display:none;">
+          <div class="recs-header">LYRICS</div>
+          <div id="lyrics-list" style="max-height:200px; overflow-y:auto; padding:0 4px;"></div>
+        </div>
+
         <!-- Recommendations -->
         <div class="recs-section" id="recs-section">
           <div class="recs-header">UP NEXT — RECOMMENDED</div>
@@ -201,14 +207,40 @@
     <section id="view-playlists" class="view">
       <div class="queue-view">
         <div class="queue-header">
-          <span class="queue-title">Playlists</span>
+          <span class="queue-title">Library Insights</span>
+          <span class="queue-count" id="stats-streak"></span>
         </div>
-        <div class="queue-list">
-          <div class="queue-empty">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+
+        <div class="s-card" style="margin: 0 var(--space-16) var(--space-12);">
+          <div class="s-card-header">Listening Stats</div>
+          <div id="stats-grid" style="display:grid; grid-template-columns:repeat(3,1fr); gap:var(--space-8); padding:var(--space-12) var(--space-16);">
+            <!-- Populated by JS -->
+          </div>
+          <div id="stats-empty" class="queue-empty" style="display:none; padding:var(--space-20);">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
             <div style="text-align:center;">
-              <div style="font-weight:var(--weight-semi); color:var(--text-primary); margin-bottom:4px;">No playlists yet</div>
-              <div style="font-size:var(--text-caption);">Smart playlists will appear here once you listen more</div>
+              <div style="font-weight:var(--weight-semi); color:var(--text-primary); margin-bottom:4px;">No listening history yet</div>
+              <div style="font-size:var(--text-caption);">Play some songs — stats appear here</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="s-card" style="margin: 0 var(--space-16) var(--space-12);">
+          <div class="s-card-header">Top Songs</div>
+          <div class="song-list" id="top-songs-list" style="padding:0 var(--space-8) var(--space-8);">
+            <!-- Populated by JS -->
+          </div>
+        </div>
+
+        <div class="s-card" style="margin: 0 var(--space-16);">
+          <div class="s-card-header">Smart Playlists</div>
+          <div class="queue-list" id="playlists-list" style="padding:0 var(--space-8) var(--space-8);">
+            <div class="queue-empty" id="playlists-empty">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+              <div style="text-align:center;">
+                <div style="font-weight:var(--weight-semi); color:var(--text-primary); margin-bottom:4px;">No playlists yet</div>
+                <div style="font-size:var(--text-caption);">Smart playlists will appear here</div>
+              </div>
             </div>
           </div>
         </div>
@@ -245,15 +277,15 @@
             <!-- Music Folder -->
             <div class="s-card">
               <div class="s-card-header">Music Library</div>
-              <div class="s-row">
+              <div class="s-row" id="row-music-folder" style="cursor:pointer;" title="Choose music folder">
                 <div class="s-icon">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
                 </div>
                 <div class="s-info">
                   <div class="s-label">Music Folder</div>
-                  <div class="s-hint">Scanned for audio files</div>
+                  <div class="s-hint">Click to choose your library folder</div>
                 </div>
-                <span class="s-folder-tag">
+                <span class="s-folder-tag" id="folder-tag">
                   <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M2 4h12v9H2zM2 4l2-2h3l1 2"/></svg>
                   ~/Music
                 </span>
@@ -264,7 +296,7 @@
                 </div>
                 <div class="s-info">
                   <div class="s-label">Re-index Library</div>
-                  <div class="s-hint">847 songs · Scanned 2 hours ago</div>
+                  <div class="s-hint" id="scan-hint">Scans your folder for audio files</div>
                 </div>
                 <button class="s-action-btn" id="btn-scan">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
@@ -294,7 +326,7 @@
                   <div class="about-name">Musico</div>
                   <div class="about-detail">Tauri · Symphonia · Pure Rust Backend</div>
                 </div>
-                <span class="version-badge">v0.2.0</span>
+                <span class="version-badge">v0.3.0</span>
               </div>
             </div>
           </div>
@@ -313,25 +345,16 @@
                 </div>
                 <div class="s-toggle on" id="toggle-eq"></div>
               </div>
-              <div style="padding: var(--space-4) var(--space-16) var(--space-8); display:flex; gap:var(--space-6); flex-wrap:wrap;">
-                <button class="sort-pill active">Flat</button>
-                <button class="sort-pill">Bass Boost</button>
-                <button class="sort-pill">Vocal</button>
-                <button class="sort-pill">Treble</button>
-                <button class="sort-pill">Rock</button>
-                <button class="sort-pill">Classical</button>
+              <div style="padding: var(--space-4) var(--space-16) var(--space-8); display:flex; gap:var(--space-6); flex-wrap:wrap;" id="eq-presets">
+                <button class="sort-pill active" data-eq-preset="Flat">Flat</button>
+                <button class="sort-pill" data-eq-preset="Bass Boost">Bass Boost</button>
+                <button class="sort-pill" data-eq-preset="Vocal">Vocal</button>
+                <button class="sort-pill" data-eq-preset="Treble">Treble</button>
+                <button class="sort-pill" data-eq-preset="Rock">Rock</button>
+                <button class="sort-pill" data-eq-preset="Classical">Classical</button>
               </div>
-              <div class="eq-bands">
-                <div class="eq-band"><span class="eq-band-label">32</span><span class="eq-band-value">0</span></div>
-                <div class="eq-band"><span class="eq-band-label">64</span><span class="eq-band-value">0</span></div>
-                <div class="eq-band"><span class="eq-band-label">125</span><span class="eq-band-value">0</span></div>
-                <div class="eq-band"><span class="eq-band-label">250</span><span class="eq-band-value">0</span></div>
-                <div class="eq-band"><span class="eq-band-label">500</span><span class="eq-band-value">0</span></div>
-                <div class="eq-band"><span class="eq-band-label">1K</span><span class="eq-band-value">0</span></div>
-                <div class="eq-band"><span class="eq-band-label">2K</span><span class="eq-band-value">0</span></div>
-                <div class="eq-band"><span class="eq-band-label">4K</span><span class="eq-band-value">0</span></div>
-                <div class="eq-band"><span class="eq-band-label">8K</span><span class="eq-band-value">0</span></div>
-                <div class="eq-band"><span class="eq-band-label">16K</span><span class="eq-band-value">0</span></div>
+              <div class="eq-bands" id="eq-bands">
+                <!-- Populated by JS: 10 vertical sliders -->
               </div>
             </div>
 

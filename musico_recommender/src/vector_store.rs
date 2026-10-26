@@ -5,11 +5,22 @@
 //! duplicate indexing of the same file.
 
 use chrono::Utc;
-use uuid::Uuid;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 use crate::errors::RecommenderError;
 use crate::extractor;
 use crate::models::{SongRecord, Store};
+
+
+/// Deterministic song id derived from the file path. Same file → same id
+/// across launches and re-scans, so listening history survives re-indexing.
+/// (Replaces per-record UUIDs; ids are opaque strings everywhere downstream.)
+pub fn stable_song_id(path: &str) -> String {
+    let mut h = DefaultHasher::new();
+    path.hash(&mut h);
+    format!("{:016x}", h.finish())
+}
 
 // ---------------------------------------------------------------------------
 // Cosine similarity
@@ -51,7 +62,7 @@ pub(crate) fn index_song(store: &Store, path: &str) -> Result<SongRecord, Recomm
     // ---- Single-pass analysis (metadata + features) ----
     let result = extractor::analyze_file(path)?;
 
-    let id = Uuid::new_v4().to_string();
+    let id = stable_song_id(path);
     let record = SongRecord {
         id: id.clone(),
         file_path: path.to_string(),
@@ -102,7 +113,7 @@ pub(crate) fn index_song_no_flush(store: &Store, path: &str) -> Result<SongRecor
     }
 
     let result = extractor::analyze_file(path)?;
-    let id = Uuid::new_v4().to_string();
+    let id = stable_song_id(path);
     let record = SongRecord {
         id: id.clone(),
         file_path: path.to_string(),
@@ -136,7 +147,7 @@ pub(crate) fn index_from_result(
     path: &str,
     result: crate::models::AnalysisResult,
 ) -> Result<SongRecord, RecommenderError> {
-    let id = Uuid::new_v4().to_string();
+    let id = stable_song_id(path);
     let record = SongRecord {
         id: id.clone(),
         file_path: path.to_string(),

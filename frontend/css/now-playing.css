@@ -684,3 +684,23 @@
   .transport-btn { width: 40px; height: 40px; }
   .play-btn-main { width: 56px; height: 56px; }
 }
+
+/* ─── Lyrics (synced karaoke + unsynced) ─────────────────────────────────── */
+.lyric-line {
+  padding: 5px 12px;
+  font-size: var(--text-body);
+  line-height: 1.45;
+  color: var(--text-secondary);
+  border-radius: var(--radius-md);
+  transition: color 0.3s ease, background 0.3s ease, transform 0.3s ease;
+  cursor: default;
+}
+.lyric-line.active {
+  color: var(--accent);
+  font-weight: var(--weight-semi);
+  background: var(--accent-tint);
+  transform: scale(1.02);
+}
+.lyric-line.past {
+  color: var(--text-muted);
+}

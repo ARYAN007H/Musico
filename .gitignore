@@ -19,3 +19,5 @@ target/
 .gemini/
 scratch/
 musico_redesign.html 
+# Tauri generated schemas
+src-tauri/gen/

@@ -473,3 +473,34 @@
 
   .swatches-row { padding: var(--space-8) var(--space-12); }
 }
+
+/* ─── EQ vertical sliders ─────────────────────────────────────────────────── */
+.eq-bands {
+  display: flex;
+  justify-content: space-between;
+  padding: var(--space-8) var(--space-20) var(--space-16);
+}
+.eq-band {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.eq-slider {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  width: 18px;
+  height: 90px;
+  accent-color: var(--accent);
+  background: transparent;
+  cursor: pointer;
+}
+.eq-band-value {
+  font-size: 9px;
+  color: var(--text-secondary);
+  min-height: 11px;
+}
+.eq-band-label {
+  font-size: var(--text-caption);
+  color: var(--text-muted);
+}

@@ -1,17 +1,42 @@
 /* ══════════════════════════════════════════════════════════════════════════════
    MUSICO — Tauri IPC Bridge
-   Wraps Tauri invoke() calls with mock fallbacks for standalone preview.
+   Wraps Tauri invoke() calls with stateful mock fallbacks so index.html works
+   as a standalone preview in any browser (no backend required).
    ══════════════════════════════════════════════════════════════════════════════ */
 
 const Bridge = (() => {
   const isTauri = typeof window.__TAURI__ !== 'undefined';
+  const listeners = {};
+  const mockQueue = [];
+
+  function emit(event, payload) {
+    (listeners[event] || []).forEach((cb) => cb({ event, payload }));
+  }
+
+  let onError = null;
 
   async function invoke(cmd, args = {}) {
     if (isTauri) {
-      return window.__TAURI__.invoke(cmd, args);
+      try {
+        return await window.__TAURI__.invoke(cmd, args);
+      } catch (err) {
+        if (onError) onError(`${cmd}: ${err}`);
+        console.warn(`[musico] ${cmd} failed:`, err);
+        return null;
+      }
     }
-    // Mock fallbacks for standalone preview
     return mockCommand(cmd, args);
+  }
+
+  function listen(event, callback) {
+    if (isTauri && window.__TAURI__.event) {
+      return window.__TAURI__.event.listen(event, callback);
+    }
+    (listeners[event] = listeners[event] || []).push(callback);
+    // Returns an unsubscribe function (same contract as Tauri listen)
+    return () => {
+      listeners[event] = (listeners[event] || []).filter((cb) => cb !== callback);
+    };
   }
 
   // Mock data for standalone HTML preview
@@ -35,9 +60,66 @@ const Bridge = (() => {
       case 'get_library':
         return Promise.resolve(DEMO_SONGS);
       case 'get_queue':
-        return Promise.resolve([]);
+        return Promise.resolve([...mockQueue]);
+      case 'play_song':
+        emit('playback-event', { type: 'Playing', song: args.song });
+        return Promise.resolve(null);
+      case 'resume':
+        emit('playback-event', { type: 'Resumed' });
+        return Promise.resolve(null);
+      case 'pause':
+        emit('playback-event', { type: 'Paused', position_secs: 0 });
+        return Promise.resolve(null);
+      case 'next':
+      case 'previous':
+        return Promise.resolve(null);
+      case 'add_to_queue':
+        mockQueue.push(args.song);
+        emit('queue-changed', [...mockQueue]);
+        return Promise.resolve(null);
+      case 'play_next':
+        mockQueue.unshift(args.song);
+        emit('queue-changed', [...mockQueue]);
+        return Promise.resolve(null);
+      case 'remove_from_queue': {
+        const i = mockQueue.findIndex((s) => s.id === args.songId);
+        if (i >= 0) mockQueue.splice(i, 1);
+        emit('queue-changed', [...mockQueue]);
+        return Promise.resolve(null);
+      }
+      case 'clear_queue':
+        mockQueue.length = 0;
+        emit('queue-changed', []);
+        return Promise.resolve(null);
       case 'get_recommendations':
         return Promise.resolve(DEMO_SONGS.slice(3, 7));
+      case 'start_scan':
+        emit('library-updated', DEMO_SONGS);
+        return Promise.resolve(true);
+      case 'get_cover':
+        return Promise.resolve(null);
+      case 'get_settings':
+        return Promise.resolve({
+          music_folder: null, volume: 0.68, palette: 'nebula', art_tint: true,
+          smart_recs: true, eq_enabled: true, eq_preset: 'Flat', normalization: 'Off',
+          crossfade_enabled: false, crossfade_duration: 3.0, library_view_mode: 'list',
+        });
+      case 'save_settings':
+        return Promise.resolve(null);
+      case 'pick_folder':
+      case 'set_music_folder':
+      case 'set_playback_modes':
+        return Promise.resolve(null);
+      case 'get_stats':
+        return Promise.resolve({ total_plays: 0, total_listened_secs: 0, total_skips: 0,
+          streak_days: 0, avg_listen_ratio: 0, top_songs: [], top_artists: [], daily_minutes: [] });
+      case 'get_playlists':
+        return Promise.resolve([]);
+      case 'get_lyrics':
+        return Promise.resolve(null);
+      case 'set_eq':
+      case 'set_normalization':
+        return Promise.resolve(null);
       case 'get_playback_state':
         return Promise.resolve({
           current_song: null,
@@ -46,7 +128,7 @@ const Bridge = (() => {
           duration_secs: 0,
           volume: 0.68,
         });
-      case 'search_library':
+      case 'search_library': {
         const q = (args.query || '').toLowerCase();
         return Promise.resolve(
           DEMO_SONGS.filter(s =>
@@ -55,19 +137,11 @@ const Bridge = (() => {
             s.album.toLowerCase().includes(q)
           )
         );
+      }
       default:
         return Promise.resolve(null);
     }
   }
 
-  // Event listener for Tauri events
-  function listen(event, callback) {
-    if (isTauri && window.__TAURI__.event) {
-      return window.__TAURI__.event.listen(event, callback);
-    }
-    // No-op for standalone
-    return () => {};
-  }
-
-  return { invoke, listen, isTauri, DEMO_SONGS };
+  return { invoke, listen, isTauri, DEMO_SONGS, setErrorHandler: (fn) => { onError = fn; } };
 })();
