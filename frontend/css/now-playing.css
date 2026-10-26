@@ -165,7 +165,7 @@
   left: -4px;
   width: 11px;
   height: 16px;
-  background: #7a6e60;
+  background: var(--tonearm-metal);
   border-radius: 2px 2px 4px 4px;
 }
 

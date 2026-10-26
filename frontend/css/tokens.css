@@ -119,6 +119,9 @@
   /* ─── Knob ────────────────────────────────────────────────────────────── */
   --knob-size:         72px;
   --knob-track-width:  4px;
+
+  /* ─── Tonearm ─────────────────────────────────────────────────────────── */
+  --tonearm-metal:     #7a6e60;
 }
 
 /* ─── Palette Overrides ─────────────────────────────────────────────────────── */
@@ -176,3 +179,38 @@
   --accent-shadow:     rgba(122, 122, 128, 0.30);
   --accent-glow:       rgba(122, 122, 128, 0.15);
 }
+
+/* ─── Dark Theme ──────────────────────────────────────────────────────────────
+   Celestia dark surfaces — the design language Musico's engine-era mock used.
+   Accents carry over per-palette; tints get a touch more presence on dark.   */
+
+[data-theme="dark"] {
+  --surface-base:      #0a0b10;
+  --surface:           #0e0f16;
+  --surface-raised:    #161721;
+  --surface-inset:     #0a0b11;
+  --surface-deep:      #060709;
+
+  --shadow-dark:       rgba(0, 0, 0, 0.65);
+  --shadow-light:      rgba(255, 255, 255, 0.045);
+  --shadow-dark-strong: rgba(0, 0, 0, 0.8);
+  --shadow-light-strong: rgba(255, 255, 255, 0.07);
+
+  --text-primary:      #e2e4f0;
+  --text-secondary:    #8b8fa8;
+  --text-muted:        #5a5e75;
+  --text-disabled:     #3c3f52;
+
+  --divider:           rgba(255, 255, 255, 0.07);
+  --border-subtle:     rgba(255, 255, 255, 0.05);
+
+  --tonearm-metal:     #6d7590;
+}
+
+/* Slightly stronger accent tints on dark for visibility */
+[data-theme="dark"][data-palette="nebula"]  { --accent-tint: rgba(124,107,196,0.16); --accent-tint-strong: rgba(124,107,196,0.30); }
+[data-theme="dark"][data-palette="sakura"]  { --accent-tint: rgba(212,84,138,0.16);  --accent-tint-strong: rgba(212,84,138,0.30); }
+[data-theme="dark"][data-palette="aurora"]  { --accent-tint: rgba(45,166,122,0.16);  --accent-tint-strong: rgba(45,166,122,0.30); }
+[data-theme="dark"][data-palette="ocean"]   { --accent-tint: rgba(46,150,204,0.16);  --accent-tint-strong: rgba(46,150,204,0.30); }
+[data-theme="dark"][data-palette="ember"]   { --accent-tint: rgba(212,138,60,0.16);  --accent-tint-strong: rgba(212,138,60,0.30); }
+[data-theme="dark"][data-palette="mono"]    { --accent-tint: rgba(150,150,160,0.16); --accent-tint-strong: rgba(150,150,160,0.30); }

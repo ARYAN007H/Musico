@@ -41,6 +41,9 @@ pub struct AppSettings {
     /// 0=off, 1=repeat one, 2=repeat all
     #[serde(default)]
     pub repeat_mode: u8,
+    /// UI theme: "light" | "dark"
+    #[serde(default = "default_theme")]
+    pub theme: String,
 }
 
 fn default_volume() -> f32 { 0.68 }
@@ -50,6 +53,7 @@ fn default_eq_preset() -> String { "Flat".into() }
 fn default_norm() -> String { "Off".into() }
 fn default_crossfade_duration() -> f32 { 3.0 }
 fn default_view_mode() -> String { "list".into() }
+fn default_theme() -> String { "light".into() }
 
 impl Default for AppSettings {
     fn default() -> Self {
@@ -67,6 +71,7 @@ impl Default for AppSettings {
             library_view_mode: default_view_mode(),
             shuffle_mode: 0,
             repeat_mode: 0,
+            theme: default_theme(),
         }
     }
 }

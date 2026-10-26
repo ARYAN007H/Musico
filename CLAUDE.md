@@ -99,6 +99,15 @@ thread, playlist CRUD editor, tauri-plugin-updater, release tag + GitHub publish
 - C13 partial: release.yml updated for musico-tauri (webkit2gtk deps, cargo test without
   audio-device tests); version 0.3.0 everywhere.
 
+**DARK MODE + INSTALL (2026-10-27 late):**
+- `[data-theme="dark"]` token block in tokens.css (Celestia dark surfaces); Light/Dark pills in
+  Settings → Themes; persisted as `theme` in AppSettings (serde default "light").
+- **Tauri v2 global API: invoke is `window.__TAURI__.core.invoke`, NOT `.invoke`** — bridge.js
+  handles both shapes. Event listen is `__TAURI__.event.listen` (unchanged).
+- Installed to device: `~/.local/bin/musico` (release binary), desktop entry +
+  hicolor SVG icon installed. Old Iced binary + entry REMOVED. Shared sled DB kept.
+  Browser previews cache JS aggressively — cache-bust with ?v= when testing CSS/JS edits.
+
 **KNOWN LIMITATIONS / NEXT:**
 - Engine-thread panic = silent death (no catch_unwind in musico_playback decoder loop) —
   acceptable for now; the event bridge would keep polling a dead engine.

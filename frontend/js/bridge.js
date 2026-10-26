@@ -5,7 +5,11 @@
    ══════════════════════════════════════════════════════════════════════════════ */
 
 const Bridge = (() => {
-  const isTauri = typeof window.__TAURI__ !== 'undefined';
+  // Tauri v2 global API shape: invoke lives under __TAURI__.core,
+  // event listeners under __TAURI__.event.
+  const T = typeof window.__TAURI__ !== 'undefined' ? window.__TAURI__ : null;
+  const tauriInvoke = T?.core?.invoke ?? T?.invoke ?? null;
+  const isTauri = !!tauriInvoke;
   const listeners = {};
   const mockQueue = [];
 
@@ -18,7 +22,7 @@ const Bridge = (() => {
   async function invoke(cmd, args = {}) {
     if (isTauri) {
       try {
-        return await window.__TAURI__.invoke(cmd, args);
+        return await tauriInvoke(cmd, args);
       } catch (err) {
         if (onError) onError(`${cmd}: ${err}`);
         console.warn(`[musico] ${cmd} failed:`, err);
@@ -29,8 +33,8 @@ const Bridge = (() => {
   }
 
   function listen(event, callback) {
-    if (isTauri && window.__TAURI__.event) {
-      return window.__TAURI__.event.listen(event, callback);
+    if (T?.event?.listen) {
+      return T.event.listen(event, callback);
     }
     (listeners[event] = listeners[event] || []).push(callback);
     // Returns an unsubscribe function (same contract as Tauri listen)
@@ -103,6 +107,7 @@ const Bridge = (() => {
           music_folder: null, volume: 0.68, palette: 'nebula', art_tint: true,
           smart_recs: true, eq_enabled: true, eq_preset: 'Flat', normalization: 'Off',
           crossfade_enabled: false, crossfade_duration: 3.0, library_view_mode: 'list',
+          shuffle_mode: 0, repeat_mode: 0, theme: 'dark',
         });
       case 'save_settings':
         return Promise.resolve(null);

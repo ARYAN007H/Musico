@@ -87,6 +87,9 @@ const App = (() => {
 
   function applySettings(s) {
     if (!s) return;
+    document.documentElement.setAttribute('data-theme', s.theme === 'dark' ? 'dark' : 'light');
+    document.querySelectorAll('[data-theme-pill]').forEach((p) =>
+      p.classList.toggle('active', p.dataset.themePill === (s.theme === 'dark' ? 'dark' : 'light')));
     if (s.palette) {
       document.documentElement.setAttribute('data-palette', s.palette);
       document.querySelectorAll('.swatch').forEach((sw) =>
@@ -152,6 +155,17 @@ const App = (() => {
       const el = document.getElementById(id);
       if (!el) return;
       el.addEventListener('click', () => persistSettings({ [key]: el.classList.contains('on') }));
+    });
+
+    // Theme pills
+    document.querySelectorAll('[data-theme-pill]').forEach((pill) => {
+      pill.addEventListener('click', () => {
+        document.querySelectorAll('[data-theme-pill]').forEach((p) => p.classList.remove('active'));
+        pill.classList.add('active');
+        const theme = pill.dataset.themePill;
+        document.documentElement.setAttribute('data-theme', theme);
+        persistSettings({ theme });
+      });
     });
 
     // Music folder row → native picker
