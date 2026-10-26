@@ -28,8 +28,13 @@
   background process — every feature must respect this. Measure at C1 and C14.
 - No story/branding talk — the goal is a daily-driver app.
 
-## CURRENT STATUS (2026-10-27, post C6)
+## RELEASE STATE
+**v0.3.0 committed (26d3c74, 2026-10-27). All 14 chunks done. Measured: 513ms cold start,
+~138MB RAM idle, ~1% idle CPU (release build). Tests: 20 across workspace, all green.
+Next-up candidates (not started): playback-mode profiling, catch_unwind guard on decoder
+thread, playlist CRUD editor, tauri-plugin-updater, release tag + GitHub publish.**
 
+## CURRENT STATUS (2026-10-27, post C6)
 **DONE & VERIFIED:**
 - C1 Real playback: `src-tauri/src/event_bridge.rs` drains engine events → `playback-event`
   Tauri events (tagged JSON, 50ms poll); auto-advance; next/previous/play_next/clear_queue;
