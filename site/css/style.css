@@ -176,10 +176,28 @@ body::after {
   .hero-title .line > span { animation: rise 0.9s var(--ease) 2.35s forwards; }
   .hero-title .line:nth-child(2) > span { animation-delay: 2.5s; }
 }
-/* healthy JS lifts the loader early — pull the rise forward too */
-body.loaded .hero-title .line > span { animation-delay: 0.05s; }
-body.loaded .hero-title .line:nth-child(2) > span { animation-delay: 0.17s; }
+/* no reel intro (WebGL off / reduced): rise as soon as the loader lifts */
+body.loaded:not(.intro-waiting) .hero-title .line > span { animation-delay: 0.05s; }
+body.loaded:not(.intro-waiting) .hero-title .line:nth-child(2) > span { animation-delay: 0.17s; }
 @keyframes rise { to { transform: translateY(0); } }
+
+/* hero furniture enters in stages after the intro */
+.hero-eyebrow, .hero-sub, .hero-actions, .hero-stats, .hero-hint {
+  opacity: 0; transform: translateY(16px);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .hero-eyebrow  { animation: fadeup 0.8s var(--ease) 2.1s forwards; }
+  .hero-sub      { animation: fadeup 0.8s var(--ease) 2.55s forwards; }
+  .hero-actions  { animation: fadeup 0.8s var(--ease) 2.72s forwards; }
+  .hero-stats    { animation: fadeup 0.8s var(--ease) 2.9s forwards; }
+  .hero-hint     { animation: fadeup 0.9s var(--ease) 3.2s forwards; }
+}
+body.loaded:not(.intro-waiting) .hero-eyebrow  { animation-delay: 0.02s; }
+body.loaded:not(.intro-waiting) .hero-sub      { animation-delay: 0.12s; }
+body.loaded:not(.intro-waiting) .hero-actions  { animation-delay: 0.24s; }
+body.loaded:not(.intro-waiting) .hero-stats    { animation-delay: 0.36s; }
+body.loaded:not(.intro-waiting) .hero-hint     { animation-delay: 0.55s; }
+@keyframes fadeup { to { opacity: 1; transform: none; } }
 
 .hero-sub {
   max-width: 470px; margin-top: 30px;
@@ -225,9 +243,7 @@ body.loaded .hero-title .line:nth-child(2) > span { animation-delay: 0.17s; }
 .hero-hint {
   margin-top: auto; padding-top: 46px;
   font-size: 11.5px; letter-spacing: 0.2em; color: var(--muted);
-  animation: blink 2.4s ease-in-out infinite;
 }
-@keyframes blink { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
 
 /* ── marquee ──────────────────────────────────────────────────── */
 .marquee {
@@ -397,8 +413,11 @@ kbd {
 /* ── reduced motion ───────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .mq-track, .hero-title .line > span, .hero-hint, .loader { animation: none !important; }
+  .mq-track, .hero-title .line > span, .loader { animation: none !important; }
   .hero-title .line > span { transform: none; }
+  .hero-eyebrow, .hero-sub, .hero-actions, .hero-stats, .hero-hint {
+    opacity: 1; transform: none; animation: none !important;
+  }
   .loader.done { visibility: hidden; }
   .reveal { opacity: 1; transform: none; transition: none; }
   * { transition-duration: 0.01ms !important; }
