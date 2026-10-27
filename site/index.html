@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MUSICO — Side A · your music never leaves your machine</title>
+  <meta name="description" content="An offline-first music player for Linux with a pure-Rust audio engine and on-device recommendations. No accounts, no cloud, no tracking. Recorded live on GitHub Pages.">
+  <meta property="og:title" content="MUSICO — Side A · your mix, your machine">
+  <meta property="og:description" content="Offline-first Linux music player. Smart Radio from on-device audio analysis, synced lyrics, 10-band EQ, MPRIS. Rust + Tauri.">
+  <meta property="og:image" content="assets/musico.svg">
+  <meta name="theme-color" content="#f2ede3">
+  <link rel="icon" type="image/svg+xml" href="assets/musico.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Caveat:wght@600;700&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- preloader -->
+  <div class="loader" id="loader" aria-hidden="true">
+    <div class="loader-brand">MUSICO</div>
+    <div class="loader-meta"><span id="loaderPct">0%</span><span>REWINDING…</span></div>
+    <div class="loader-bar"><i id="loaderFill"></i></div>
+  </div>
+
+  <!-- custom cursor -->
+  <div class="cursor-dot" id="cursorDot" aria-hidden="true"></div>
+  <div class="cursor-ring" id="cursorRing" aria-hidden="true"></div>
+
+  <!-- 3D stage -->
+  <canvas id="stage" aria-hidden="true"></canvas>
+  <noscript><div class="noscript">This site plays its best with JavaScript — but Musico itself doesn't need a browser at all. Grab it from GitHub&nbsp;Releases.</div></noscript>
+
+  <!-- nav -->
+  <header class="nav">
+    <a class="nav-brand" href="#top" data-cursor>MUSICO<i>●</i></a>
+    <nav class="nav-links" aria-label="Site">
+      <a href="#side-a" data-cursor>SIDE A</a>
+      <a href="#side-b" data-cursor>SIDE B</a>
+      <a href="#download" data-cursor>GET IT</a>
+      <a href="https://github.com/ARYAN007H/musico" target="_blank" rel="noopener" data-cursor>SOURCE ↗</a>
+    </nav>
+    <button class="sound-toggle" id="soundToggle" data-cursor aria-pressed="false">SOUND: OFF</button>
+  </header>
+
+  <main class="content" id="top">
+
+    <!-- HERO -->
+    <section class="hero">
+      <p class="hero-eyebrow halo">MUSICO <i>●</i> V0.3.0 <i>●</i> OFFLINE-FIRST FOR LINUX</p>
+      <h1 class="hero-title">
+        <span class="line"><span class="halo">YOUR MIX.</span></span>
+        <span class="line"><span class="halo outline">YOUR MACHINE.</span></span>
+      </h1>
+      <p class="hero-sub">An offline-first music player with a pure-Rust engine and
+        recommendations that run <b>on your hardware</b>. No accounts. No tracking.
+        No cloud. Ever.</p>
+      <div class="hero-actions">
+        <button class="play-btn" id="playBtn" data-cursor aria-pressed="false">
+          <svg class="ic-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+          <svg class="ic-pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
+          <span class="play-label">PLAY THE TAPE</span>
+        </button>
+        <a class="ghost-btn" href="https://github.com/ARYAN007H/musico/releases/latest" target="_blank" rel="noopener" data-cursor>DOWNLOAD ↓</a>
+      </div>
+      <div class="hero-stats halo">
+        <span>513MS COLD START</span><span>~138MB RAM</span><span>&lt;1% IDLE CPU</span><span class="accent">0 CLOUD CALLS</span>
+      </div>
+      <p class="hero-hint halo" id="heroHint">◈ DRAG THE CASSETTE — SCROLL TO FLIP TO SIDE B</p>
+    </section>
+
+    <!-- MARQUEE A -->
+    <div class="marquee" aria-hidden="true">
+      <div class="mq-track"><span>NO CLOUD <i>●</i> NO ACCOUNTS <i>●</i> NO TRACKING <i>●</i> YOUR FILES STAY PUT <i>●</i> EVERY SKIP TEACHES IT <i>●</i>&nbsp;</span><span>NO CLOUD <i>●</i> NO ACCOUNTS <i>●</i> NO TRACKING <i>●</i> YOUR FILES STAY PUT <i>●</i> EVERY SKIP TEACHES IT <i>●</i>&nbsp;</span></div>
+    </div>
+
+    <!-- SIDE A / FEATURES -->
+    <section class="side" id="side-a">
+      <header class="side-head">
+        <span class="side-tag">SIDE A</span>
+        <h2>WHAT IT<br>DOES.</h2>
+      </header>
+      <div class="feat-rows">
+        <a class="row" href="https://github.com/ARYAN007H/musico" target="_blank" rel="noopener" data-cursor>
+          <span class="row-num">A1</span>
+          <span class="row-title">SMART RADIO</span>
+          <span class="row-desc">It listens. It learns. It queues. On-device MFCC + chroma analysis, session mood-lock, skip affinity — a radio station running on your CPU.</span>
+        </a>
+        <a class="row" href="https://github.com/ARYAN007H/musico" target="_blank" rel="noopener" data-cursor>
+          <span class="row-num">A2</span>
+          <span class="row-title">PURE-RUST ENGINE</span>
+          <span class="row-desc">Symphonia decode → Rubato resample → lock-free ring buffer → CPAL output. Progress and seek driven by real engine events, never timers.</span>
+        </a>
+        <a class="row" href="https://github.com/ARYAN007H/musico" target="_blank" rel="noopener" data-cursor>
+          <span class="row-num">A3</span>
+          <span class="row-title">INSTANT LIBRARY</span>
+          <span class="row-desc">Tags, art and features extracted once, cached on disk. Restart re-scans hundreds of files in milliseconds. Search, sort, grid — instant.</span>
+        </a>
+        <a class="row" href="https://github.com/ARYAN007H/musico" target="_blank" rel="noopener" data-cursor>
+          <span class="row-num">A4</span>
+          <span class="row-title">SYNCED LYRICS</span>
+          <span class="row-desc">Drop a .lrc next to the file and Now Playing turns karaoke — lines light up in time, locally rendered.</span>
+        </a>
+        <a class="row" href="https://github.com/ARYAN007H/musico" target="_blank" rel="noopener" data-cursor>
+          <span class="row-num">A5</span>
+          <span class="row-title">EQ + REPLAYGAIN</span>
+          <span class="row-desc">10 bands, 6 presets, your own curves — and loudness matched across the whole library so quiet cuts stop getting steamrolled.</span>
+        </a>
+        <a class="row" href="https://github.com/ARYAN007H/musico" target="_blank" rel="noopener" data-cursor>
+          <span class="row-num">A6</span>
+          <span class="row-title">DESKTOP-NATIVE</span>
+          <span class="row-desc">MPRIS out of the box: media keys, playerctl, desktop widgets, Bluetooth. Light &amp; dark, six palettes, full keyboard access.</span>
+        </a>
+      </div>
+      <p class="kbd-line">KEYBOARD FIRST — <kbd>SPACE</kbd> PLAY <kbd>←→</kbd> SEEK <kbd>↑↓</kbd> VOL <kbd>N/P</kbd> TRACK <kbd>S</kbd> SMART SHUFFLE <kbd>R</kbd> REPEAT</p>
+    </section>
+
+    <!-- MARQUEE B -->
+    <div class="marquee reverse outline" aria-hidden="true">
+      <div class="mq-track"><span>SMART RADIO <i>●</i> RUST ENGINE <i>●</i> KARAOKE LYRICS <i>●</i> REPLAYGAIN <i>●</i> MPRIS <i>●</i>&nbsp;</span><span>SMART RADIO <i>●</i> RUST ENGINE <i>●</i> KARAOKE LYRICS <i>●</i> REPLAYGAIN <i>●</i> MPRIS <i>●</i>&nbsp;</span></div>
+    </div>
+
+    <!-- SIDE B / SPECS -->
+    <section class="side" id="side-b">
+      <header class="side-head">
+        <span class="side-tag alt">SIDE B</span>
+        <h2>THE SPEC<br>SHEET.</h2>
+      </header>
+      <div class="spec-grid">
+        <div class="spec"><span>ENGINE</span><b>RUST · SYMPHONIA · CPAL</b></div>
+        <div class="spec"><span>SHELL</span><b>TAURI 2 · WEBKITGTK</b></div>
+        <div class="spec"><span>RECOMMENDER</span><b>ON-DEVICE FFT · COSINE + SESSION EMA</b></div>
+        <div class="spec"><span>COLD START</span><b>513 MS</b></div>
+        <div class="spec"><span>RAM IDLE</span><b>~138 MB</b></div>
+        <div class="spec"><span>CLOUD CALLS</span><b class="accent">0 — NONE. EVER.</b></div>
+        <div class="spec"><span>PLATFORM</span><b>LINUX · ALSA / PIPEWIRE</b></div>
+        <div class="spec"><span>LICENSE</span><b>FREE &amp; OPEN SOURCE</b></div>
+      </div>
+    </section>
+
+    <!-- PRIVACY -->
+    <section class="privacy" id="privacy">
+      <p class="p-line"><span class="halo">NO CLOUD<span class="accent">.</span></span></p>
+      <p class="p-line"><span class="halo">NO ACCOUNTS<span class="accent">.</span></span></p>
+      <p class="p-line"><span class="halo">NO TELEMETRY<span class="accent">.</span></span></p>
+      <p class="p-note">THE CASSETTE IS THE CLOUD. YOUR SHELF IS THE SERVER.</p>
+    </section>
+
+    <!-- DOWNLOAD -->
+    <section class="dl" id="download">
+      <h2 class="dl-title"><span class="halo">GET<br>SIDE&nbsp;A<span class="accent">.</span></span></h2>
+      <div class="dl-actions">
+        <a class="solid-btn" href="https://github.com/ARYAN007H/musico/releases/latest" target="_blank" rel="noopener" data-cursor>DOWNLOAD V0.3.0 ↓</a>
+        <a class="ghost-btn dark" href="https://github.com/ARYAN007H/musico" target="_blank" rel="noopener" data-cursor>BUILD FROM SOURCE</a>
+      </div>
+      <code class="dl-cmd">git clone https://github.com/ARYAN007H/musico &amp;&amp; cd musico &amp;&amp; cargo tauri build</code>
+    </section>
+
+    <footer class="footer">
+      <span class="f-brand">MUSICO</span>
+      <span class="f-note">RECORDED LIVE ON GITHUB PAGES — © 2026 ARYAN</span>
+      <span class="f-links">
+        <a href="https://github.com/ARYAN007H/musico" target="_blank" rel="noopener" data-cursor>GITHUB</a>
+        <a href="https://github.com/ARYAN007H/musico/releases" target="_blank" rel="noopener" data-cursor>RELEASES</a>
+        <a href="https://github.com/ARYAN007H/musico/issues" target="_blank" rel="noopener" data-cursor>ISSUES</a>
+      </span>
+    </footer>
+  </main>
+
+  <script type="importmap">
+  { "imports": { "three": "./js/vendor/three.module.min.js" } }
+  </script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

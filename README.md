@@ -15,6 +15,10 @@
   <code>513ms cold start</code> · <code>~138 MB RAM</code> · <code>Smart Radio</code> · <code>Synced lyrics</code> · <code>MPRIS</code>
 </p>
 
+<p align="center">
+  🌐 <a href="https://aryan007h.github.io/Musico/"><b>landing site</b></a> · <a href="https://github.com/ARYAN007H/musico/releases/latest"><b>download v0.3.0</b></a>
+</p>
+
 ---
 
 ## ✨ What is Musico?

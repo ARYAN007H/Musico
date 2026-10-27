@@ -171,6 +171,12 @@ frontend/
                             PositionUpdate while dragging)
   css/tokens.css            palette via [data-palette] attr on <html>; fonts, radii
   css/neumorphic|layout|now-playing|library|queue|settings|animations.css
+site/                       landing site (vanilla HTML/CSS + three.js vendored in js/vendor/,
+                            import-map, no build step) → GitHub Pages via
+                            .github/workflows/pages.yml (push to main touching site/**);
+                            live at https://aryan007h.github.io/Musico/. QA: ?scroll=<px>
+                            jumps instantly; loader/hero-rise are compositor-CSS driven so
+                            they complete even under main-thread stall
 musico_app/src/             (PORT SOURCE, Iced) scanner.rs real metadata+cover extraction,
                             config.rs ~/.config/musico/settings.json persistence, covers.rs,
                             lyrics.rs LRC parser, mpris.rs, timer.rs, updater.rs, stats
