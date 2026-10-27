@@ -10,6 +10,8 @@ mod commands;
 mod config;
 mod event_bridge;
 mod lyrics;
+#[cfg(not(target_os = "linux"))]
+mod media_controls;
 #[cfg(target_os = "linux")]
 mod mpris;
 mod scanner;
@@ -40,6 +42,13 @@ fn main() {
     builder.init();
 
     tauri::Builder::default()
+        // Must be the first plugin: blocks a second instance before it can
+        // touch the sled DB or audio device; focuses the existing window.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_shell::init())
         .manage(AppState::new())
         .setup(|app| {
@@ -65,6 +74,20 @@ fn main() {
                 if has_folder {
                     scanner::start_scan(handle.clone());
                 }
+            }
+
+            // System media keys off Linux: SMTC on Windows, now-playing on macOS.
+            #[cfg(target_os = "windows")]
+            {
+                let hwnd = app
+                    .get_webview_window("main")
+                    .and_then(|w| w.hwnd().ok())
+                    .map(|h| h.0 as *mut std::ffi::c_void);
+                media_controls::init(&handle, hwnd);
+            }
+            #[cfg(target_os = "macos")]
+            {
+                media_controls::init(&handle, None);
             }
 
             // MPRIS: system media keys, playerctl, desktop widgets (D-Bus — Linux only)

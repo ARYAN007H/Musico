@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  build-linux:
+  linux:
     name: Linux x86_64 (deb / rpm / AppImage)
     runs-on: ubuntu-latest
     steps:
@@ -48,27 +48,114 @@ jobs:
           chmod +x dist/musico-linux-x86_64
           tar czf dist/musico-linux-x86_64.tar.gz -C dist musico-linux-x86_64
 
-      - name: Collect artifacts and checksums
+      - name: Collect packages
         run: |
           cp target/release/bundle/deb/*.deb dist/
           cp target/release/bundle/rpm/*.rpm dist/
           cp target/release/bundle/appimage/*.AppImage dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-linux
+          path: dist/*
+          if-no-files-found: error
+
+  windows:
+    name: Windows x86_64 (NSIS)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Tauri CLI
+        run: npm install --global "@tauri-apps/cli@^2"
+
+      - name: Build installer
+        run: tauri build --bundles nsis
+
+      - name: Collect packages
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp target/release/bundle/nsis/*-setup.exe dist/
+          cp target/release/musico-tauri.exe dist/musico-windows-x86_64.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-windows
+          path: dist/*
+          if-no-files-found: error
+
+  macos:
+    name: macOS universal (DMG)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Tauri CLI
+        run: npm install --global "@tauri-apps/cli@^2"
+
+      - name: Build universal DMG
+        run: tauri build --target universal-apple-darwin --bundles dmg
+
+      - name: Collect packages
+        run: |
+          mkdir -p dist
+          cp target/universal-apple-darwin/release/bundle/dmg/*.dmg dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-macos
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish release
+    needs: [linux, windows, macos]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          merge-multiple: true
+          path: dist
+
+      - name: Checksums
+        run: |
           cd dist
-          sha256sum musico-linux-x86_64 musico-linux-x86_64.tar.gz \
-            *.deb *.rpm *.AppImage > SHA256SUMS.txt
+          sha256sum Musico-* musico-* > SHA256SUMS.txt
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: Musico ${{ github.ref_name }}
-          files: |
-            dist/musico-linux-x86_64
-            dist/musico-linux-x86_64.tar.gz
-            dist/*.deb
-            dist/*.rpm
-            dist/*.AppImage
-            dist/SHA256SUMS.txt
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          files: dist/*
           fail_on_unmatched_files: true
           generate_release_notes: true
-          draft: false
-          prerelease: false
+          body: |
+            **Cross-platform preview.** Windows and macOS are first builds —
+            installers are **unsigned**, so expect one extra security prompt.
+
+            **macOS** — `.dmg` is universal (Apple Silicon + Intel). Unsigned:
+            after mounting, right-click the app → **Open** (first launch only).
+            **Windows** — run the `-setup.exe` (auto-installs WebView2 if
+            missing) or the portable `.exe`. SmartScreen: More info → Run anyway.
+            **Linux** — same formats as the stable channel; MPRIS unchanged.
+
+            New on Windows/macOS: system media keys (SMTC / now-playing),
+            single-instance guard. Report anything rough — that's what this
+            release is for.

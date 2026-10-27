@@ -254,6 +254,8 @@ pub fn spawn(engine: Arc<PlaybackEngine>, handle: AppHandle) {
                 }
                 #[cfg(target_os = "linux")]
                 update_mpris(&engine, &handle);
+                #[cfg(not(target_os = "linux"))]
+                crate::media_controls::update(&engine, &handle);
                 let _ = handle.emit(EVENT_NAME, to_payload(&ev));
             }
             std::thread::sleep(POLL_INTERVAL);

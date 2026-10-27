@@ -1,6 +1,6 @@
 [package]
 name = "musico-tauri"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 rust-version = "1.78"
 description = "Tauri shell for Musico — neumorphic music player"
@@ -24,7 +24,12 @@ dirs = "5"
 symphonia = { version = "0.5", features = ["all"] }
 rfd = "0.14"
 rand = "0.8"
+tauri-plugin-single-instance = "2"
 tokio = { version = "1", features = ["sync", "time", "rt"] }
+
+# System media controls: SMTC (Windows) / MPNowPlayingInfoCenter (macOS).
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+souvlaki = { version = "0.8", default-features = false }
 
 # MPRIS is a D-Bus (freedesktop.org) interface — Linux only.
 [target.'cfg(target_os = "linux")'.dependencies]
