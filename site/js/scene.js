@@ -145,11 +145,14 @@ function drawBack(cv) {
   ctx.font = '600 44px Caveat, cursive';
   ctx.fillText('flip it — the spec sheet', 66, 140);
 
-  // tracklist, two columns under the window
+  // tracklist, two columns under the window — B1–B3 left, B4–B6 right
   const tracks = [
-    ['B1', 'SMART RADIO', '3:42'], ['B4', 'SYNCED LYRICS', '2:58'],
-    ['B2', 'RUST ENGINE', '4:05'], ['B5', 'EQ + REPLAYGAIN', '3:21'],
-    ['B3', 'INSTANT LIBRARY', '5:14'], ['B6', 'MPRIS NATIVE', '4:47'],
+    ['B1', 'SMART RADIO', '3:42'],
+    ['B2', 'RUST ENGINE', '4:05'],
+    ['B3', 'INSTANT LIBRARY', '5:14'],
+    ['B4', 'SYNCED LYRICS', '2:58'],
+    ['B5', 'EQ + REPLAYGAIN', '3:21'],
+    ['B6', 'MPRIS NATIVE', '4:47'],
   ];
   ctx.font = '700 19px "Space Mono", monospace';
   ctx.fillStyle = C.ink;
@@ -325,8 +328,8 @@ export function createScene(canvas) {
   const KF = [
     { p: 0.00, x: 2.1,  y: -0.15, rz: -0.30, rx: 0.05,  s: 0.78, flip: 0 },
     { p: 0.20, x: 3.3,  y: 0.10,  rz: 0.16,  rx: -0.05, s: 0.70, flip: 0.07 },
-    { p: 0.44, x: -3.3, y: 0.05,  rz: -0.42, rx: 0.06,  s: 0.80, flip: 1 },
-    { p: 0.60, x: 3.0,  y: 0.00,  rz: 0.12,  rx: -0.03, s: 0.74, flip: 1 },
+    { p: 0.44, x: -3.7, y: 0.05,  rz: -0.42, rx: 0.06,  s: 0.72, flip: 1 },
+    { p: 0.60, x: -3.9, y: 0.00,  rz: 0.12,  rx: -0.03, s: 0.66, flip: 1 },
     { p: 0.74, x: 0.0,  y: 0.25,  rz: 0.06,  rx: -0.06, s: 0.62, flip: 1 },
     { p: 0.90, x: 0.0,  y: -0.20, rz: -0.26, rx: 0.05,  s: 0.80, flip: 0 },
     { p: 1.00, x: 0.0,  y: -0.35, rz: -0.30, rx: 0.05,  s: 0.78, flip: 0 },

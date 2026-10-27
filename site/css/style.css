@@ -311,11 +311,15 @@ kbd {
   max-width: 900px;
   border-top: 2px solid var(--ink);
 }
+/* cassette parks left during Side B — keep the sheet on the right */
+#side-b .spec-grid { max-width: 720px; margin-left: auto; }
+@media (max-width: 860px) { #side-b .spec-grid { margin-left: 0; } }
 .spec {
   display: flex; align-items: baseline; justify-content: space-between; gap: 18px;
-  padding: 17px 4px;
+  padding: 17px 10px;
   border-bottom: 1.5px dashed color-mix(in srgb, var(--ink) 45%, transparent);
   font-size: 13px;
+  background: color-mix(in srgb, var(--paper) 88%, transparent);
 }
 .spec span { letter-spacing: 0.16em; font-size: 11px; color: var(--muted); flex: none; }
 .spec b { text-align: right; letter-spacing: 0.04em; }
