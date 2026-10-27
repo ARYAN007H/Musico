@@ -358,9 +358,15 @@ export function createScene(canvas) {
   const introDur = 2.4;
   let introT = -1, introDone = null, qaHold = -1;
   const INTRO_FROM = { x: 2.2 * 3.3 * 0.86, y: -0.17, rz: -0.05, rx: 0.03, s: 3.3 };
-  const skipIntro = () => { if (introT >= 0) introT = introDur; };
-  addEventListener('pointerdown', skipIntro, { passive: true });
-  addEventListener('wheel', skipIntro, { passive: true });
+  // any interaction cancels the intro; the damped scroll path takes over smoothly
+  const endIntro = () => {
+    if (introT >= 0) {
+      introT = -1;
+      if (introDone) { const cb = introDone; introDone = null; cb(); }
+    }
+  };
+  addEventListener('pointerdown', endIntro, { passive: true });
+  addEventListener('wheel', endIntro, { passive: true });
 
   /* drag to rotate */
   const drag = { cur: { x: 0, y: 0 }, target: { x: 0, y: 0 }, down: false, moved: 0, lx: 0, ly: 0 };
