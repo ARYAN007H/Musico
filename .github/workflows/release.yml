@@ -10,13 +10,16 @@ permissions:
 
 jobs:
   build-linux:
-    name: Build Linux x86_64
+    name: Linux x86_64 (deb / rpm / AppImage)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
 
       - name: Install system dependencies
         run: |
@@ -29,25 +32,43 @@ jobs:
         run: cargo test --workspace --exclude musico_playback
         # Engine e2e tests need a real audio device — CI runners have none.
 
-      - name: Build release binary
-        run: cargo build --release --bin musico-tauri
+      - name: Install Tauri CLI
+        run: npm install --global "@tauri-apps/cli@^2"
 
-      - name: Strip binary
-        run: strip target/release/musico-tauri
+      - name: Build bundles
+        run: tauri build --bundles deb,rpm,appimage
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        # linuxdeploy runs via extract-and-run — CI runners have no FUSE.
 
-      - name: Package
+      - name: Package raw binary
         run: |
           mkdir -p dist
           cp target/release/musico-tauri dist/musico-linux-x86_64
           chmod +x dist/musico-linux-x86_64
-          cd dist && tar czf musico-linux-x86_64.tar.gz musico-linux-x86_64
+          tar czf dist/musico-linux-x86_64.tar.gz -C dist musico-linux-x86_64
+
+      - name: Collect artifacts and checksums
+        run: |
+          cp target/release/bundle/deb/*.deb dist/
+          cp target/release/bundle/rpm/*.rpm dist/
+          cp target/release/bundle/appimage/*.AppImage dist/
+          cd dist
+          sha256sum musico-linux-x86_64 musico-linux-x86_64.tar.gz \
+            *.deb *.rpm *.AppImage > SHA256SUMS.txt
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          name: Musico ${{ github.ref_name }}
           files: |
             dist/musico-linux-x86_64
             dist/musico-linux-x86_64.tar.gz
+            dist/*.deb
+            dist/*.rpm
+            dist/*.AppImage
+            dist/SHA256SUMS.txt
+          fail_on_unmatched_files: true
           generate_release_notes: true
           draft: false
           prerelease: false

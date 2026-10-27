@@ -83,13 +83,24 @@ profiling; the idle footprint is the background-app baseline that matters.
 
 ## 📦 Install
 
+Grab the matching artifact from the [latest release](https://github.com/ARYAN007H/Musico/releases/latest):
+
+| File | Use |
+|---|---|
+| `musico_*_amd64.deb` | Debian / Ubuntu — `sudo apt install ./musico_*.deb` |
+| `musico-*.x86_64.rpm` | Fedora / openSUSE — `sudo dnf install ./musico-*.rpm` |
+| `musico_*_amd64.AppImage` | Any distro — `chmod +x` and run, nothing installed |
+| `musico-linux-x86_64.tar.gz` | Bare binary — extract and `cp musico-linux-x86_64 ~/.local/bin/musico` |
+
+Every asset has a SHA-256 in `SHA256SUMS.txt`.
+
+Quick start without picking a format:
+
 ```bash
 curl -LO https://github.com/ARYAN007H/Musico/releases/latest/download/musico-linux-x86_64
 chmod +x musico-linux-x86_64
 ./musico-linux-x86_64
 ```
-
-Or move it into your `PATH` as `musico`.
 
 ## 🛠️ Build from Source
 
