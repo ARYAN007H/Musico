@@ -12,20 +12,9 @@ function bootScene() {
   try {
     scene = createScene(canvas);
     scene.setProgress(lastProgress);
-    // when the reel-intro lands, release the hero text and unlock scrolling
-    scene.start(() => {
-      document.body.classList.remove('intro-waiting');
-      document.body.style.overflow = '';
-    });
-    if (QA_INTRO_K !== null) {
-      scene.debugHoldIntro(QA_INTRO_K);
-      document.body.classList.remove('intro-waiting');
-      document.body.style.overflow = '';
-    }
+    scene.start();
   } catch (err) {
     canvas.style.display = 'none';
-    document.body.classList.remove('intro-waiting');
-    document.body.style.overflow = '';
     console.warn('WebGL unavailable — cassette offline.', err);
   }
 }
@@ -49,13 +38,11 @@ addEventListener('mousemove', (e) => {
   scene.setMouse((e.clientX / innerWidth) * 2 - 1, (e.clientY / innerHeight) * 2 - 1);
 }, { passive: true });
 
-/* debug/QA hooks: ?scroll=<px> jumps instantly; ?qa&introk=<0..1> freezes the intro */
-const QA_INTRO_K = (() => {
-  const q = new URLSearchParams(location.search);
-  const sp = q.get('scroll');
+/* debug/QA hook: ?scroll=<px> jumps to a position after load (instant) */
+{
+  const sp = new URLSearchParams(location.search).get('scroll');
   if (sp) addEventListener('load', () => scrollTo({ top: +sp, behavior: 'instant' }));
-  return q.has('qa') ? parseFloat(q.get('introk') ?? '0.35') : null;
-})();
+}
 
 /* ── preloader ────────────────────────────────────────────────── */
 const loader = document.getElementById('loader');
@@ -64,17 +51,11 @@ const fill = document.getElementById('loaderFill');
 function finishLoader() {
   loader.classList.add('done');
   document.body.classList.add('loaded');
-  // with the reel-intro ahead, scroll stays locked and hero copy waits
-  // (both released when the intro lands — see bootScene)
-  if (reduced || QA_INTRO_K !== null) {
-    document.body.style.overflow = '';
-  } else {
-    document.body.classList.add('intro-waiting');
-  }
+  document.body.style.overflow = '';
   requestAnimationFrame(() => setTimeout(bootScene, 60));
   setTimeout(() => loader.remove(), 900);
 }
-if (loader && !reduced && QA_INTRO_K === null) {
+if (loader && !reduced) {
   document.body.style.overflow = 'hidden';
   let v = 0, holds = 0;
   const tick = setInterval(() => {
@@ -115,10 +96,11 @@ if (finePointer) {
 }
 
 /* ── soundtrack (WebAudio, user-toggled) ────────────────────────
-   CC-licensed piano loop ("Gymnopédie No. 1", Kevin MacLeod,
-   incompetech.com — CC-BY 4.0) through a gentle master chain,
-   plus a faint tape hiss and a mechanical reel buzz that fades
-   in only while the tape is playing                              */
+   looped from sound/loop.mp3 — drop any mp3 in there (renamed to
+   loop.mp3) and the site plays it. Defaults to "Gymnopédie No. 1"
+   by Kevin MacLeod (incompetech.com, CC-BY 4.0), plus a faint tape
+   hiss and a mechanical reel buzz that fades in only while the
+   tape is playing                                                 */
 let audio = null;
 const soundToggle = document.getElementById('soundToggle');
 
@@ -132,10 +114,11 @@ function buildAudio() {
   warm.type = 'lowpass'; warm.frequency.value = 14000;
   master.connect(glue); glue.connect(warm); warm.connect(ctx.destination);
 
-  /* the music itself */
-  const music = new Audio('assets/audio/loop.mp3');
+  /* the music itself — swap sound/loop.mp3 to change it */
+  const music = new Audio('sound/loop.mp3');
   music.loop = true;
   music.preload = 'auto';
+  music.addEventListener('error', () => console.warn('sound/loop.mp3 missing — music off, ambience only.'));
   const musicGain = ctx.createGain();
   musicGain.gain.value = 0.6;
   ctx.createMediaElementSource(music).connect(musicGain).connect(master);

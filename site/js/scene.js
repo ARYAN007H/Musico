@@ -354,20 +354,6 @@ export function createScene(canvas) {
   let playing = false;
   let reelSpeed = 0, tapeK = 0, tapeDir = 1;
 
-  /* intro: start zoomed on the left reel, pull back to the hero pose */
-  const introDur = 2.4;
-  let introT = -1, introDone = null, qaHold = -1;
-  const INTRO_FROM = { x: 2.2 * 3.3 * 0.86, y: -0.17, rz: -0.05, rx: 0.03, s: 3.3 };
-  // any interaction cancels the intro; the damped scroll path takes over smoothly
-  const endIntro = () => {
-    if (introT >= 0) {
-      introT = -1;
-      if (introDone) { const cb = introDone; introDone = null; cb(); }
-    }
-  };
-  addEventListener('pointerdown', endIntro, { passive: true });
-  addEventListener('wheel', endIntro, { passive: true });
-
   /* drag to rotate */
   const drag = { cur: { x: 0, y: 0 }, target: { x: 0, y: 0 }, down: false, moved: 0, lx: 0, ly: 0 };
   const INTERACTIVE = 'a, button, input, textarea, select, kbd, code, [data-no-drag]';
@@ -430,37 +416,11 @@ export function createScene(canvas) {
     const t = clock.elapsedTime;
 
     // pose from scroll (+ narrow-screen adjustments)
-    let pose = samplePose(state.progress);
+    const pose = samplePose(state.progress);
     const narrow = aspect < 0.9;
     const px = narrow ? pose.x * 0.22 : pose.x;
     const py = narrow ? pose.y + 0.35 : pose.y;
     const ps = pose.s * (narrow ? 0.5 : 1);
-
-    // intro: direct-pose zoom from the reel close-up back to the hero pose
-    let introK = -1;
-    if (qaHold >= 0) introK = qaHold;
-    else if (introT >= 0) {
-      introT += dt;
-      const raw = Math.min(1, introT / introDur);
-      introK = raw * raw * (3 - 2 * raw); // smoothstep
-      if (introT >= introDur) {
-        introT = -1;
-        if (introDone) { const cb = introDone; introDone = null; cb(); }
-      }
-    }
-    if (introK >= 0) {
-      const targetX = narrow ? pose.x * 0.35 : pose.x;
-      const targetY = narrow ? pose.y + 0.35 : pose.y;
-      const targetS = pose.s * (narrow ? 0.62 : 1);
-      pose = {
-        x: lerp(INTRO_FROM.x, targetX, introK),
-        y: lerp(INTRO_FROM.y, targetY, introK),
-        rz: lerp(INTRO_FROM.rz, pose.rz, introK),
-        rx: lerp(INTRO_FROM.rx, pose.rx, introK),
-        s: lerp(INTRO_FROM.s, targetS, introK),
-        flip: pose.flip,
-      };
-    }
 
     // drag easing
     if (!drag.down) {
@@ -469,28 +429,18 @@ export function createScene(canvas) {
     drag.cur.x = lerp(drag.cur.x, drag.target.x, 0.09);
     drag.cur.y = lerp(drag.cur.y, drag.target.y, 0.09);
 
-    const sway = reduced || introK >= 0 ? 0 : Math.sin(t * 0.45) * 0.045;
-    const bob = reduced || introK >= 0 ? 0 : Math.sin(t * 0.85) * 0.09;
+    const sway = reduced ? 0 : Math.sin(t * 0.45) * 0.045;
+    const bob = reduced ? 0 : Math.sin(t * 0.85) * 0.09;
 
-    if (introK >= 0) {
-      // intro is authored, not damped — every frame lands exactly on the path
-      cassette.position.x = pose.x;
-      cassette.position.y = pose.y;
-      cassette.scale.setScalar(pose.s);
-      cassette.rotation.y = pose.rz + pose.flip * Math.PI + drag.cur.y;
-      cassette.rotation.x = pose.rx + drag.cur.x;
-      cassette.rotation.z = 0;
-    } else {
-      cassette.position.x = lerp(cassette.position.x, px, 0.08);
-      cassette.position.y = lerp(cassette.position.y, py + bob, 0.08);
-      cassette.scale.setScalar(lerp(cassette.scale.x, ps, 0.08));
-      cassette.rotation.y = lerp(cassette.rotation.y, pose.rz + pose.flip * Math.PI + drag.cur.y + sway, 0.09);
-      cassette.rotation.x = lerp(cassette.rotation.x, pose.rx + drag.cur.x, 0.09);
-      cassette.rotation.z = lerp(cassette.rotation.z, Math.sin(t * 0.35) * 0.012, 0.05);
-    }
+    cassette.position.x = lerp(cassette.position.x, px, 0.08);
+    cassette.position.y = lerp(cassette.position.y, py + bob, 0.08);
+    cassette.scale.setScalar(lerp(cassette.scale.x, ps, 0.08));
+    cassette.rotation.y = lerp(cassette.rotation.y, pose.rz + pose.flip * Math.PI + drag.cur.y + sway, 0.09);
+    cassette.rotation.x = lerp(cassette.rotation.x, pose.rx + drag.cur.x, 0.09);
+    cassette.rotation.z = lerp(cassette.rotation.z, Math.sin(t * 0.35) * 0.012, 0.05);
 
-    // reels + tape transfer (fast spin while the intro "plays")
-    const targetSpeed = reduced ? 0 : (introT >= 0 ? 6 : (playing ? 3.6 : 0.02));
+    // reels + tape transfer
+    const targetSpeed = reduced ? 0 : (playing ? 3.6 : 0.02);
     reelSpeed = lerp(reelSpeed, targetSpeed, 0.04);
     reelL.rotation.z -= reelSpeed * dt;
     reelR.rotation.z -= reelSpeed * dt * 1.15;
@@ -517,12 +467,7 @@ export function createScene(canvas) {
   frame();
 
   return {
-    start(onIntroDone) {
-      started = true;
-      if (typeof onIntroDone === 'function') introDone = onIntroDone;
-      if (!reduced) introT = 0;
-    },
-    debugHoldIntro(k) { qaHold = Math.min(1, Math.max(0, k)); started = true; },
+    start() { started = true; },
     setProgress(p) { state.progress = Math.min(1, Math.max(0, p)); },
     setMouse(x, y) { state.mx = x; state.my = y; },
     setPlaying(v) { playing = v; },
