@@ -44,11 +44,27 @@ Measured: 513ms cold start, ~138MB RAM idle, ~1% idle CPU. Tests 20 across works
   rustup-installed std). macOS aarch64 check NOT possible from Linux (objc2 needs Apple clang);
   the macos CI runner is authoritative. Frontend already WebView2/WKWebView-safe (webkit
   scrollbar/slider prefixes everywhere).
-- Next-up port work: media keys off-Linux (Windows SMTC, macOS MediaRemote), runtime testing on
-  real Win/mac hardware, code signing (Apple $99/yr, Windows cert), then extend release.yml to a
-  3-OS matrix (keep win/mac prerelease=true until a human has run the package).
+- Next-up port work: runtime testing on real Win/mac hardware (v0.4.0-rc1 borrowed-machine
+  session 2026-10-30), code signing (Apple $99/yr, Windows cert), promote to stable v0.4.0.
 - Other candidates (not started): playback-mode profiling, catch_unwind guard on decoder
   thread, playlist CRUD editor, tauri-plugin-updater.
+
+**v0.4.0-rc1 (2026-10-28): cross-platform preview prerelease.** release.yml is now a 3-OS
+matrix — linux (deb/rpm/AppImage/binary), windows (NSIS setup + portable exe), macos
+(UNIVERSAL dmg via `--target universal-apple-darwin`) — separate build jobs upload artifacts,
+one `publish` job downloads + SHA256SUMS + creates the release (race-free). Tags containing
+`-` (e.g. v0.4.0-rc1) publish as `prerelease: true`. Version bumped 0.3.0 → 0.4.0.
+- Off-Linux media keys: `src-tauri/src/media_controls.rs` (souvlaki 0.8, cfg not-linux) —
+  SMTC on Windows (hwnd from main webview window), MPNowPlayingInfoCenter on macOS. Event
+  bridge calls `media_controls::update` on every playback event (mirrors update_mpris);
+  handlers route through the SAME commands as the UI (commands::next/resume/...), AppHandle
+  parked in a OnceLock. Metadata (title/artist/art) only re-pushed on song change.
+  Best-effort by design: every failure logs, never panics.
+- Single-instance: tauri-plugin-single-instance registered FIRST in builder (focuses existing
+  window; protects sled DB lock + audio device).
+- WARNING: parallel session works this repo — uncommitted in-flight recommender feature
+  (models.rs/vector_store.rs/profile.rs, test module stale) lives in the tree; do NOT
+  `git add -A`, stage explicit paths only.
 
 ## CURRENT STATUS (2026-10-27, post C6)
 **DONE & VERIFIED:**
