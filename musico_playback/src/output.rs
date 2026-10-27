@@ -2,12 +2,17 @@
 //!
 //! Sets up the audio device, creates a lock-free ring buffer, and runs
 //! the CPAL callback that pops samples and applies volume scaling.
+//!
+//! The callback also tracks how many samples it has actually *played*, so
+//! the reported position matches what the listener hears instead of how far
+//! the decoder has run ahead.
 
 use crate::error::PlaybackError;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use ringbuf::{HeapConsumer, HeapProducer, HeapRb};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 /// Manages the CPAL output stream and the producer half of the ring buffer.
 ///
@@ -27,14 +32,20 @@ pub struct AudioOutput {
     /// Shared mute flag.
     muted: Arc<AtomicBool>,
     /// Shared flush flag — when set, the CPAL callback discards all buffered
-    /// samples and clears the flag. Used for instant seek.
+    /// samples and clears the flag. Used for instant seek/stop.
     flush_requested: Arc<AtomicBool>,
+    /// Shared pause gate — when set, the callback outputs silence and leaves
+    /// the ring buffer untouched, so pause is instant and resume is seamless.
+    paused: Arc<AtomicBool>,
+    /// Total samples the callback has actually consumed (not counting flush
+    /// discards). `played_secs()` derives the audible position from this.
+    played_samples: Arc<AtomicU64>,
 }
 
 impl AudioOutput {
     /// Initialises the default audio output device and stream.
     ///
-    /// Creates a ring buffer of ~2 seconds capacity and starts the stream.
+    /// Creates a ring buffer of ~1 second capacity and starts the stream.
     pub fn new() -> Result<Self, PlaybackError> {
         let host = cpal::default_host();
         let device = host
@@ -73,20 +84,28 @@ impl AudioOutput {
 
         log::info!("Output config: {sample_rate} Hz, {channels} ch, {:?}", config.sample_format());
 
-        // Ring buffer: 2 seconds of audio.
-        let buf_size = (sample_rate as usize) * channels * 2;
+        // Ring buffer: 1 second of audio. Small enough that seek/stop flushes
+        // quickly, large enough to ride out scheduler hiccups.
+        let buf_size = (sample_rate as usize) * channels;
         let rb = HeapRb::<f32>::new(buf_size);
         let (producer, consumer) = rb.split();
 
         let volume = Arc::new(AtomicU32::new(f32::to_bits(1.0)));
         let muted = Arc::new(AtomicBool::new(false));
         let flush_requested = Arc::new(AtomicBool::new(false));
+        let paused = Arc::new(AtomicBool::new(false));
+        let played_samples = Arc::new(AtomicU64::new(0));
 
         let vol_clone = Arc::clone(&volume);
         let muted_clone = Arc::clone(&muted);
         let flush_clone = Arc::clone(&flush_requested);
+        let paused_clone = Arc::clone(&paused);
+        let played_clone = Arc::clone(&played_samples);
 
-        let stream = Self::build_stream(&device, &config.into(), consumer, vol_clone, muted_clone, flush_clone)?;
+        let stream = Self::build_stream(
+            &device, &config.into(), consumer,
+            vol_clone, muted_clone, flush_clone, paused_clone, played_clone,
+        )?;
         stream.play().map_err(|e| PlaybackError::StreamBuild(format!("{e}")))?;
 
         Ok(Self {
@@ -97,6 +116,8 @@ impl AudioOutput {
             volume,
             muted,
             flush_requested,
+            paused,
+            played_samples,
         })
     }
 
@@ -131,6 +152,46 @@ impl AudioOutput {
         self.flush_requested.store(true, Ordering::Release);
     }
 
+    /// Requests a flush and waits until the callback has discarded the
+    /// buffered samples (flush discards are instant, so this takes at most
+    /// one callback period). Returns `false` on timeout.
+    pub fn flush_now(&self, timeout: Duration) -> bool {
+        self.request_flush();
+        self.wait_drain(timeout)
+    }
+
+    /// Gates the audio callback. While paused it outputs silence without
+    /// consuming the ring buffer — pause is instant, and resume continues
+    /// from exactly the buffered position.
+    pub fn set_paused(&self, p: bool) {
+        self.paused.store(p, Ordering::Release);
+    }
+
+    /// Seconds of audio the listener has actually heard since the last
+    /// `reset_played()`.
+    pub fn played_secs(&self) -> f32 {
+        self.played_samples.load(Ordering::Relaxed) as f32
+            / (self.sample_rate as f32 * self.channels as f32)
+    }
+
+    /// Resets the played-sample counter (song start / seek base).
+    pub fn reset_played(&self) {
+        self.played_samples.store(0, Ordering::Release);
+    }
+
+    /// Blocks until the callback has drained the ring buffer (song tail,
+    /// seek flush). Returns `false` on timeout.
+    pub fn wait_drain(&self, timeout: Duration) -> bool {
+        let deadline = Instant::now() + timeout;
+        while !self.producer.is_empty() {
+            if Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        true
+    }
+
     fn build_stream(
         device: &cpal::Device,
         config: &cpal::StreamConfig,
@@ -138,17 +199,26 @@ impl AudioOutput {
         volume: Arc<AtomicU32>,
         muted: Arc<AtomicBool>,
         flush_requested: Arc<AtomicBool>,
+        paused: Arc<AtomicBool>,
+        played_samples: Arc<AtomicU64>,
     ) -> Result<cpal::Stream, PlaybackError> {
         let stream = device
             .build_output_stream(
                 config,
                 move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                    // If a flush was requested (seek), drain all stale samples.
+                    // If a flush was requested (seek/stop), drain all stale
+                    // samples. Flush discards do not count as played.
                     if flush_requested.compare_exchange(
                         true, false, Ordering::AcqRel, Ordering::Relaxed
                     ).is_ok() {
-                        // Discard everything in the ring buffer.
                         while consumer.pop().is_some() {}
+                    }
+
+                    // Pause gate: silence without consuming, so resume picks
+                    // up exactly where the listener paused.
+                    if paused.load(Ordering::Acquire) {
+                        data.fill(0.0);
+                        return;
                     }
 
                     let vol = if muted.load(Ordering::Relaxed) {
@@ -156,11 +226,18 @@ impl AudioOutput {
                     } else {
                         f32::from_bits(volume.load(Ordering::Relaxed))
                     };
+                    let mut popped = 0usize;
                     for sample in data.iter_mut() {
                         *sample = match consumer.pop() {
-                            Some(s) => s * vol,
+                            Some(s) => {
+                                popped += 1;
+                                s * vol
+                            }
                             None => 0.0, // underrun — fill silence
                         };
+                    }
+                    if popped > 0 {
+                        played_samples.fetch_add(popped as u64, Ordering::Relaxed);
                     }
                 },
                 |err| log::error!("CPAL stream error: {err}"),

@@ -48,6 +48,8 @@ use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, Sender};
 
+use crate::output::AudioOutput;
+
 /// The main playback engine handle.
 ///
 /// All public methods are safe to call from the GUI thread. The audio pipeline
@@ -248,7 +250,7 @@ fn decoder_thread(
 
     loop {
         // Step 1: Wait for a Play command.
-        let song_info = match wait_for_play(&cmd_rx, &event_tx, &state) {
+        let song_info = match wait_for_play(&cmd_rx, &event_tx, &state, &audio_output) {
             Some(s) => s,
             None => return, // channel closed
         };
@@ -271,6 +273,7 @@ fn wait_for_play(
     cmd_rx: &Receiver<PlaybackCommand>,
     event_tx: &Sender<PlaybackEvent>,
     state: &Arc<Mutex<PlaybackState>>,
+    audio_output: &AudioOutput,
 ) -> Option<SongInfo> {
     loop {
         match cmd_rx.recv() {
@@ -278,6 +281,21 @@ fn wait_for_play(
             Ok(PlaybackCommand::Stop) => {
                 set_stopped(state);
                 let _ = event_tx.send(PlaybackEvent::Stopped);
+            }
+            Ok(PlaybackCommand::SetVolume(v)) => {
+                // Apply even while idle so get_playback_state, the knob and
+                // the audio device all agree before the first song starts.
+                audio_output.set_volume(v);
+                state.lock().unwrap_or_else(|e| e.into_inner()).volume = v;
+                let _ = event_tx.send(PlaybackEvent::VolumeChanged(v));
+            }
+            Ok(PlaybackCommand::Mute) => {
+                audio_output.set_muted(true);
+                state.lock().unwrap_or_else(|e| e.into_inner()).muted = true;
+            }
+            Ok(PlaybackCommand::Unmute) => {
+                audio_output.set_muted(false);
+                state.lock().unwrap_or_else(|e| e.into_inner()).muted = false;
             }
             Ok(PlaybackCommand::PreloadNext(s)) => {
                 log::info!("Preload hint received for: {}", s.title);
@@ -347,6 +365,17 @@ fn play_song(
     let mut crossfade_mixer = crossfade::CrossfadeMixer::new(CrossfadeConfig::default());
     let mut preloaded_decoder: Option<(decoder::AudioDecoder, SongInfo)> = None;
 
+    // Position base: playback position = seek_base + played_secs(), where
+    // played_secs is what the audio callback has actually consumed.
+    let mut seek_base: f32 = 0.0;
+    // Gate the callback and drain whatever the previous song left in the
+    // buffer synchronously (flush discards are instant), so this song's
+    // prefill can't be thrown away by a pending flush.
+    audio_output.set_paused(true);
+    audio_output.flush_now(Duration::from_millis(100));
+    audio_output.reset_played();
+    audio_output.set_paused(false);
+
     // Set state to buffering.
     {
         let mut st = state.lock().unwrap_or_else(|e| e.into_inner());
@@ -395,19 +424,29 @@ fn play_song(
     let _ = event_tx.send(PlaybackEvent::Playing(song.clone()));
 
     // Main decode loop.
-    let mut decoded_frames: u64 = 0;
     let mut last_position_emit = Instant::now();
     let position_interval = Duration::from_millis(250);
+
+    // Tail-drain state: after the decoder returns EOF, keep servicing
+    // commands while the buffered tail plays out, so the last second of a
+    // song isn't cut and Stop/Next stay responsive.
+    let mut decoding_done = false;
+    let mut drain_deadline = Instant::now();
 
     loop {
         // Check for commands (non-blocking).
         while let Ok(cmd) = cmd_rx.try_recv() {
             match cmd {
                 PlaybackCommand::Pause => {
+                    // Gate the callback first: silence is instant, and the
+                    // ring buffer keeps the in-flight audio for a seamless
+                    // resume.
+                    audio_output.set_paused(true);
                     accumulate_listen(state);
                     {
                         let mut st = state.lock().unwrap_or_else(|e| e.into_inner());
                         st.status = PlaybackStatus::Paused;
+                        st.position_secs = seek_base + audio_output.played_secs();
                     }
                     let pos = state.lock().unwrap_or_else(|e| e.into_inner()).position_secs;
                     let _ = event_tx.send(PlaybackEvent::Paused { position_secs: pos });
@@ -416,6 +455,7 @@ fn play_song(
                     loop {
                         match cmd_rx.recv() {
                             Ok(PlaybackCommand::Resume) => {
+                                audio_output.set_paused(false);
                                 let mut st = state.lock().unwrap_or_else(|e| e.into_inner());
                                 st.status = PlaybackStatus::Playing;
                                 st.listen_start = Some(Instant::now());
@@ -423,6 +463,8 @@ fn play_song(
                                 break;
                             }
                             Ok(PlaybackCommand::Stop) => {
+                                audio_output.set_paused(true);
+                                audio_output.request_flush();
                                 set_stopped(state);
                                 let _ = event_tx.send(PlaybackEvent::Stopped);
                                 return;
@@ -431,6 +473,12 @@ fn play_song(
                                 set_stopped(state);
                                 play_song(new_song, cmd_rx, event_tx, state, audio_output, device_sr, device_ch);
                                 return;
+                            }
+                            Ok(PlaybackCommand::Seek(secs)) => {
+                                perform_seek(
+                                    &mut dec, audio_output, state, &event_tx,
+                                    secs, &mut seek_base,
+                                );
                             }
                             Ok(PlaybackCommand::SetVolume(v)) => {
                                 audio_output.set_volume(v);
@@ -455,38 +503,34 @@ fn play_song(
                             Ok(PlaybackCommand::SetNormGain(g)) => {
                                 norm_gain = g;
                             }
-                            Ok(_) => {} // ignore seek etc while paused
+                            Ok(_) => {} // ignore other commands while paused
                             Err(_) => return,
                         }
                     }
                 }
                 PlaybackCommand::Stop => {
+                    audio_output.set_paused(true);
+                    audio_output.request_flush();
                     accumulate_listen(state);
                     set_stopped(state);
                     let _ = event_tx.send(PlaybackEvent::Stopped);
                     return;
                 }
                 PlaybackCommand::Play(new_song) => {
+                    audio_output.set_paused(true);
+                    audio_output.request_flush();
                     accumulate_listen(state);
                     set_stopped(state);
-                    // Flush ring buffer so new song starts clean.
-                    audio_output.request_flush();
                     play_song(new_song, cmd_rx, event_tx, state, audio_output, device_sr, device_ch);
                     return;
                 }
                 PlaybackCommand::Seek(secs) => {
-                    if let Err(e) = dec.seek_to(secs) {
-                        let _ = event_tx.send(PlaybackEvent::Error(format!("{e}")));
-                    } else {
-                        // Request the CPAL callback to discard all stale samples.
-                        audio_output.request_flush();
-                        decoded_frames = (secs * source_sr as f32) as u64;
-                        {
-                            let mut st = state.lock().unwrap_or_else(|e| e.into_inner());
-                            st.position_secs = secs;
-                        }
-                        let _ = event_tx.send(PlaybackEvent::Seeked { position_secs: secs });
-                    }
+                    // A seek during the tail-drain resumes decoding.
+                    decoding_done = false;
+                    perform_seek(
+                        &mut dec, audio_output, state, &event_tx,
+                        secs, &mut seek_base,
+                    );
                 }
                 PlaybackCommand::SetVolume(v) => {
                     audio_output.set_volume(v);
@@ -532,10 +576,75 @@ fn play_song(
             }
         }
 
+        // Tail-drain: decoder finished; wait for the buffered tail to play
+        // out before declaring SongEnded. Commands keep being serviced above.
+        if decoding_done {
+            let drained = audio_output.producer().is_empty();
+            let timed_out = Instant::now() >= drain_deadline;
+            if drained || timed_out {
+                // Pausing during the drain means "stop here" — don't fire
+                // SongEnded (which would auto-advance to the next song).
+                let paused_now = state.lock().unwrap_or_else(|e| e.into_inner()).status
+                    == PlaybackStatus::Paused;
+                if paused_now {
+                    set_stopped(state);
+                    return;
+                }
+                accumulate_listen(state);
+                let pos = seek_base + audio_output.played_secs();
+                state
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .position_secs = pos;
+                let (song_id, listened, duration) = {
+                    let st = state.lock().unwrap_or_else(|e| e.into_inner());
+                    (
+                        st.current_song.as_ref().map(|s| s.id.clone()).unwrap_or_default(),
+                        st.listened_secs,
+                        st.duration_secs,
+                    )
+                };
+                let _ = event_tx.send(PlaybackEvent::SongEnded {
+                    song_id,
+                    listened_secs: listened,
+                    duration_secs: duration,
+                });
+
+                // ── Gapless transition ──
+                // If a next song was preloaded, start it immediately without stopping.
+                if let Some((_preloaded_dec, next_song_info)) = preloaded_decoder.take() {
+                    log::info!("Gapless transition to: {}", next_song_info.title);
+                    set_stopped(state);
+                    play_song(
+                        next_song_info, cmd_rx, event_tx, state,
+                        audio_output, device_sr, device_ch,
+                    );
+                    return;
+                }
+
+                set_stopped(state);
+                return;
+            }
+            // Keep the UI's position moving to the end during the tail.
+            if last_position_emit.elapsed() >= position_interval {
+                let (pos, listened) = {
+                    let mut st = state.lock().unwrap_or_else(|e| e.into_inner());
+                    st.position_secs = seek_base + audio_output.played_secs();
+                    (st.position_secs, st.elapsed_listen_secs())
+                };
+                let _ = event_tx.send(PlaybackEvent::PositionUpdate {
+                    position_secs: pos,
+                    listened_secs: listened,
+                });
+                last_position_emit = Instant::now();
+            }
+            thread::sleep(Duration::from_millis(10));
+            continue;
+        }
+
         // Decode next packet.
         match dec.decode_next_packet() {
             Ok(Some(samples)) => {
-                let frame_count = samples.len() / source_ch;
                 process_samples_reuse(
                     &samples, &mut resampler_opt, source_ch, device_ch,
                     &mut process_buf, &mut channel_buf,
@@ -557,8 +666,8 @@ fn play_song(
                 // Push to ring buffer, spin-waiting if full.
                 push_samples_blocking(audio_output.producer(), &process_buf);
 
-                decoded_frames += frame_count as u64;
-                let pos = decoded_frames as f32 / source_sr as f32;
+                // Position = what the listener has actually heard.
+                let pos = seek_base + audio_output.played_secs();
                 {
                     let mut st = state.lock().unwrap_or_else(|e| e.into_inner());
                     st.position_secs = pos;
@@ -575,38 +684,10 @@ fn play_song(
                 }
             }
             Ok(None) => {
-                // Song ended — report listening stats.
-                thread::sleep(Duration::from_millis(100));
-                accumulate_listen(state);
-                let (song_id, listened, duration) = {
-                    let st = state.lock().unwrap_or_else(|e| e.into_inner());
-                    (
-                        st.current_song.as_ref().map(|s| s.id.clone()).unwrap_or_default(),
-                        st.listened_secs,
-                        st.duration_secs,
-                    )
-                };
-                let _ = event_tx.send(PlaybackEvent::SongEnded {
-                    song_id,
-                    listened_secs: listened,
-                    duration_secs: duration,
-                });
-
-                // ── Gapless transition ──
-                // If a next song was preloaded, start it immediately without stopping.
-                if let Some((_preloaded_dec, next_song_info)) = preloaded_decoder.take() {
-                    log::info!("Gapless transition to: {}", next_song_info.title);
-                    // Convert SongInfo to use play_song (it opens its own decoder).
-                    set_stopped(state);
-                    play_song(
-                        next_song_info, cmd_rx, event_tx, state,
-                        audio_output, device_sr, device_ch,
-                    );
-                    return;
-                }
-
-                set_stopped(state);
-                return;
+                // Decoder hit EOF — enter the tail-drain state (handled at
+                // the top of the loop) instead of cutting buffered audio.
+                decoding_done = true;
+                drain_deadline = Instant::now() + Duration::from_secs(3);
             }
             Err(e) => {
                 let _ = event_tx.send(PlaybackEvent::Error(format!("{e}")));
@@ -618,6 +699,35 @@ fn play_song(
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/// Shared seek routine (works while playing or paused): discards stale
+/// buffered audio instantly via the callback's flush path and re-bases the
+/// position counter on the seek target. (Flush discards don't count as
+/// played, so no drain wait is needed — worst-case counter skew is one
+/// callback period, ~10ms.)
+fn perform_seek(
+    dec: &mut decoder::AudioDecoder,
+    audio_output: &mut AudioOutput,
+    state: &Arc<Mutex<PlaybackState>>,
+    event_tx: &Sender<PlaybackEvent>,
+    secs: f32,
+    seek_base: &mut f32,
+) {
+    if let Err(e) = dec.seek_to(secs) {
+        let _ = event_tx.send(PlaybackEvent::Error(format!("{e}")));
+        return;
+    }
+    // Drain the pre-seek buffer synchronously so the played-sample counter
+    // can be re-based cleanly on the seek target.
+    audio_output.flush_now(Duration::from_millis(100));
+    audio_output.reset_played();
+    *seek_base = secs;
+    state
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .position_secs = secs;
+    let _ = event_tx.send(PlaybackEvent::Seeked { position_secs: secs });
+}
 
 /// Process raw decoded samples using pre-allocated buffers: resample if needed,
 /// channel-adapt if needed. Returns a reference to the output buffer.
