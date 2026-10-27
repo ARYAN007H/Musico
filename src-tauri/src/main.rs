@@ -71,7 +71,6 @@ fn main() {
             #[cfg(target_os = "linux")]
             {
                 let mpris_handle = handle.clone();
-                let app_state = app.state::<AppState>();
                 tauri::async_runtime::spawn(async move {
                     match mpris::start_mpris_server().await {
                         Ok((cmd_rx, mpris_state)) => {

@@ -32,7 +32,7 @@
     "active": true,
     "targets": "all",
     "publisher": "Musico",
-    "category": "Audio",
+    "category": "Music",
     "copyright": "Copyright (c) 2026 Aryan. MIT License.",
     "homepage": "https://aryanch007h.github.io/Musico/",
     "shortDescription": "Fast offline-first music player with smart radio, synced lyrics and EQ.",
