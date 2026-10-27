@@ -12,9 +12,8 @@
   align-items: center;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: var(--space-32) var(--space-24) 160px;
-  gap: var(--space-20);
-  scrollbar-width: thin;
+  padding: var(--space-20) var(--space-24) 150px;
+  gap: var(--space-16);
 }
 
 /* ─── Vinyl Record Assembly ─────────────────────────────────────────────────── */
@@ -24,7 +23,7 @@
   width: var(--vinyl-size);
   height: var(--vinyl-size);
   flex-shrink: 0;
-  margin: var(--space-8) 0;
+  margin: var(--space-4) 0;
 }
 
 /* The actual vinyl disc */
@@ -34,6 +33,7 @@
   border-radius: var(--radius-circle);
   background: var(--vinyl-color);
   position: relative;
+  will-change: transform;
   box-shadow:
     8px 8px 20px var(--shadow-dark-strong),
     -6px -6px 16px var(--shadow-light),
@@ -95,14 +95,14 @@
   object-fit: cover;
 }
 
-/* Fallback label (no album art) */
+/* Fallback label (no album art) — carries the song's generated gradient */
 .vinyl-label-fallback {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--accent), var(--accent-secondary));
+  background: var(--art-grad, linear-gradient(135deg, var(--accent), var(--accent-secondary)));
 }
 
 .vinyl-label-fallback svg {
@@ -128,10 +128,10 @@
 /* Tonearm */
 .tonearm-container {
   position: absolute;
-  top: -8px;
-  right: -12px;
-  width: 100px;
-  height: 160px;
+  top: -10px;
+  right: -14px;
+  width: 110px;
+  height: 170px;
   z-index: 10;
   pointer-events: none;
 }
@@ -140,33 +140,57 @@
   position: absolute;
   top: 0;
   right: 8px;
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   border-radius: var(--radius-circle);
   background: var(--surface-raised);
   box-shadow: var(--neu-raised-sm);
 }
 
+/* Pivot dot */
+.tonearm-base::after {
+  content: '';
+  position: absolute;
+  inset: 9px;
+  border-radius: var(--radius-circle);
+  background: var(--tonearm-metal);
+  opacity: 0.55;
+}
+
 .tonearm-arm {
   position: absolute;
-  top: 12px;
-  right: 20px;
-  width: 3px;
-  height: 120px;
-  background: linear-gradient(to bottom, #b0a898, #8a7e70);
+  top: 13px;
+  right: 21px;
+  width: 4px;
+  height: 118px;
+  background: var(--tonearm-metal);
   border-radius: 2px;
-  transform-origin: 1.5px 0;
+  transform-origin: 2px 0;
   box-shadow: 1px 1px 3px var(--shadow-dark);
+}
+
+/* Counterweight above the pivot */
+.tonearm-arm::before {
+  content: '';
+  position: absolute;
+  top: -16px;
+  left: -3px;
+  width: 10px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--tonearm-metal);
+  opacity: 0.85;
 }
 
 .tonearm-head {
   position: absolute;
-  bottom: -2px;
-  left: -4px;
-  width: 11px;
-  height: 16px;
+  bottom: -4px;
+  left: -4.5px;
+  width: 13px;
+  height: 18px;
   background: var(--tonearm-metal);
-  border-radius: 2px 2px 4px 4px;
+  border-radius: 3px 3px 5px 5px;
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.25);
 }
 
 /* Vinyl ambient shadow */
@@ -194,10 +218,10 @@
 }
 
 .song-title {
-  font-size: var(--text-hero);
+  font-size: 28px;
   font-weight: var(--weight-semi);
   color: var(--text-primary);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
   line-height: 1.2;
 }
 
@@ -224,7 +248,7 @@
   border: none;
   background: var(--surface-raised);
   box-shadow: var(--neu-raised-sm);
-  color: var(--text-muted);
+  color: var(--text-secondary);
   cursor: pointer;
   transition: all var(--duration-fast) var(--ease-out);
 }
@@ -254,19 +278,25 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  height: 40px;
+  gap: 2px;
+  height: 28px;
   width: 100%;
   max-width: 480px;
   padding: 0 var(--space-4);
+  opacity: 0.9;
 }
 
 .wave-bar {
-  width: 4px;
-  border-radius: 2px;
+  width: 3px;
+  border-radius: 1.5px;
   background: var(--surface-deep);
   transition: background var(--duration-fast) linear;
   flex-shrink: 0;
+}
+
+/* Unplayed bars must stay visible on the near-black dark surface */
+[data-theme="dark"] .wave-bar {
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .wave-bar.played {
@@ -341,6 +371,12 @@
   transform: translateY(-50%) scale(1.05);
 }
 
+/* At position zero the thumb would overhang the track's left edge — hide it */
+.seek-container.at-start .seek-thumb {
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* Inner accent dot on thumb */
 .seek-thumb::after {
   content: '';
@@ -403,7 +439,7 @@
 }
 
 .transport-btn.active {
-  color: var(--accent);
+  color: var(--accent-text);
   box-shadow: var(--neu-inset-sm);
   background: var(--surface-inset);
 }
@@ -456,111 +492,7 @@
 }
 
 .mode-indicator .mode-active {
-  color: var(--accent);
-}
-
-/* ─── Volume Knob ───────────────────────────────────────────────────────────── */
-
-.volume-section {
-  display: flex;
-  align-items: center;
-  gap: var(--space-16);
-  width: 100%;
-  max-width: 280px;
-}
-
-.volume-knob-container {
-  position: relative;
-  width: var(--knob-size);
-  height: var(--knob-size);
-  flex-shrink: 0;
-}
-
-/* SVG arc track behind knob */
-.knob-track {
-  position: absolute;
-  inset: -6px;
-  width: calc(var(--knob-size) + 12px);
-  height: calc(var(--knob-size) + 12px);
-}
-
-.knob-track-bg {
-  fill: none;
-  stroke: var(--surface-deep);
-  stroke-width: var(--knob-track-width);
-  stroke-linecap: round;
-}
-
-.knob-track-fill {
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: var(--knob-track-width);
-  stroke-linecap: round;
-  transition: stroke-dashoffset 0.1s linear;
-  filter: drop-shadow(0 0 4px var(--accent-glow));
-}
-
-/* The physical knob */
-.volume-knob {
-  position: absolute;
-  inset: 0;
-  width: var(--knob-size);
-  height: var(--knob-size);
-  border-radius: var(--radius-circle);
-  background: var(--surface-raised);
-  box-shadow: var(--neu-raised);
-  cursor: grab;
-  user-select: none;
-  -webkit-user-select: none;
-  transition: box-shadow var(--duration-fast) var(--ease-out);
-}
-
-.volume-knob:hover {
-  box-shadow: var(--neu-raised-lg);
-}
-
-.volume-knob:active {
-  cursor: grabbing;
-}
-
-/* Knob notch indicator */
-.knob-notch {
-  position: absolute;
-  top: 8px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 4px;
-  height: 10px;
-  border-radius: 2px;
-  background: var(--accent);
-  box-shadow: 0 0 6px var(--accent-glow);
-}
-
-/* Knob inner ring texture */
-.volume-knob::after {
-  content: '';
-  position: absolute;
-  inset: 8px;
-  border-radius: var(--radius-circle);
-  border: 1px solid var(--divider);
-}
-
-.volume-label {
-  font-family: var(--font-mono);
-  font-size: var(--text-micro);
-  color: var(--text-muted);
-  text-align: center;
-  min-width: 32px;
-}
-
-.volume-icon {
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-
-.volume-icon svg {
-  width: 18px;
-  height: 18px;
+  color: var(--accent-text);
 }
 
 /* ─── Lyrics Panel ──────────────────────────────────────────────────────────── */
@@ -618,12 +550,63 @@
 }
 
 .recs-header {
-  font-size: var(--text-nano);
+  font-size: var(--text-micro);
   font-weight: var(--weight-semi);
   color: var(--text-muted);
-  letter-spacing: 0.1em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  margin-bottom: var(--space-12);
+  margin-bottom: var(--space-10);
+}
+
+/* Horizontal card strip — editorial, distinct from the list rows */
+.recs-cards {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 124px;
+  gap: var(--space-12);
+  overflow-x: auto;
+  padding: 2px 2px var(--space-8);
+}
+
+.rec-card {
+  cursor: pointer;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.rec-card:hover { transform: translateY(-2px); }
+
+.rec-art {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  box-shadow: var(--neu-raised-sm), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.rec-art svg {
+  width: 22px;
+  height: 22px;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.rec-name {
+  margin-top: var(--space-8);
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rec-artist {
+  font-size: var(--text-micro);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
 }
 
 /* ─── Empty State ───────────────────────────────────────────────────────────── */
@@ -696,7 +679,7 @@
   cursor: default;
 }
 .lyric-line.active {
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: var(--weight-semi);
   background: var(--accent-tint);
   transform: scale(1.02);

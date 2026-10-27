@@ -108,6 +108,29 @@ thread, playlist CRUD editor, tauri-plugin-updater, release tag + GitHub publish
   hicolor SVG icon installed. Old Iced binary + entry REMOVED. Shared sled DB kept.
   Browser previews cache JS aggressively — cache-bust with ?v= when testing CSS/JS edits.
 
+**DESIGN-CRITIQUE POLISH PASS (2026-10-27, parallel review session):**
+- Three-perspective review (normal user + UI/UX expert + judge merge) drove: contrast tokens
+  fixed (light --text-muted #7a6e5f ≈4.6:1, --text-secondary #6b5f52; dark --text-muted
+  #8a8fa6); new `--accent-text` per palette for accent-on-tint LABELS (nav/pills/badges use
+  it — raw --accent stays for fills/icons).
+- A11y baseline: global :focus-visible ring, aria-labels on icon buttons, song rows are
+  role=button + keyboard-operable + aria-current when playing, toggles role=switch,
+  swatches role=radio, seek/volume slider ARIA, prefers-reduced-motion, toast role=status.
+- Dead controls resolved: Sleep Timer card REMOVED (not core, was unwired); queue drag CSS
+  removed; btn-queue-current (+ under title) now wires add_to_queue + toast; queue header
+  has a working Clear button + "N songs · M min" count; like persists to localStorage
+  `musico-likes` + ♥ Liked filter pill in Library (migrate to a backend likes API later).
+- Rotary volume knob REMOVED (user call: felt weird; do NOT scale the vinyl to fit it).
+  Volume = slider in mini player strip (#mini-volume) + ↑/↓ keys; knob.js is its
+  controller, same Knob.setVolume API.
+- Layout/robustness: body.has-mini scroll clearance for lists; theme flash killed (inline
+  <head> script + localStorage 'musico-theme'); scrollbar-width:thin removed from
+  .now-playing (was disabling the themed scrollbar); dark wave-bars/scrollbar visible;
+  song-queue-btn always visible at 45% opacity; empty-library CTA → Settings; Top Songs
+  empty state; "Playlists" page retitled "Playlists & Insights"; Smart Radio toggle moved
+  to General; crossfade slider no longer force-enables crossfade; normalization pills
+  keyed by data-normalization.
+
 **KNOWN LIMITATIONS / NEXT:**
 - Engine-thread panic = silent death (no catch_unwind in musico_playback decoder loop) —
   acceptable for now; the event bridge would keep polling a dead engine.
@@ -138,12 +161,14 @@ frontend/
                             mini-player w/ --mini-progress CSS var; #btn-scan unhandled
   js/bridge.js              Bridge.invoke(cmd,args) → window.__TAURI__.invoke, mock fallback
                             (DEMO_SONGS) for standalone browser preview; Bridge.listen()
-  js/app.js                 568ln App module: state obj, init(), navigateTo(), filterLibrary(),
-                            sortSongs, transport handlers, fake progressSimulation, renderers,
-                            generateWaveform(seed) fake
-  js/knob.js                Knob.setVolume(v) — rotary volume
-  js/vinyl.js               Vinyl.setPlaying(bool), Vinyl.setAlbumArt(...) — spinning vinyl
-  js/seek.js                Seek — canvas seek bar (returns {})
+  js/app.js                 App module: state obj, init(), navigateTo(), filterLibrary(),
+                            sortSongs, transport handlers, renderers, likes (localStorage
+                            'musico-likes'), liked filter, queue clear/total, toasts
+  js/knob.js                Knob.setVolume(v, notify) — volume slider in mini player
+                            (rotary knob REMOVED 2026-10-27 by user preference)
+  js/vinyl.js               Vinyl.setPlaying(bool), Vinyl.setAlbumArt(...), Vinyl.setProgress
+  js/seek.js                Seek — seek bar; exposes Seek.isDragging() (app.js skips
+                            PositionUpdate while dragging)
   css/tokens.css            palette via [data-palette] attr on <html>; fonts, radii
   css/neumorphic|layout|now-playing|library|queue|settings|animations.css
 musico_app/src/             (PORT SOURCE, Iced) scanner.rs real metadata+cover extraction,

@@ -19,28 +19,22 @@
 }
 
 /* ─── Tonearm ───────────────────────────────────────────────────────────────── */
-
-@keyframes tonearm-rest {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(-18deg); }
-}
-
-@keyframes tonearm-play {
-  from { transform: rotate(-18deg); }
-  to   { transform: rotate(0deg); }
-}
+/* The arm hangs from the pivot at the disc's top-right. rotate(0) = straight
+   down at the record's right edge; negative swings it off the record (rest),
+   positive lays it into the grooves (play). Vinyl.setProgress() sweeps it
+   outward→inward with song progress like a real turntable. */
 
 .tonearm {
-  transform-origin: 12px 12px;
+  transform-origin: 1.5px 0;
   transition: transform 0.6s var(--ease-out);
 }
 
 .tonearm.resting {
-  transform: rotate(-18deg);
+  transform: rotate(-14deg);
 }
 
 .tonearm.playing {
-  transform: rotate(0deg);
+  transform: rotate(8deg);
 }
 
 /* ─── Equalizer Bars ────────────────────────────────────────────────────────── */
@@ -164,4 +158,26 @@
 
 .mini-vinyl-spin.paused {
   animation-play-state: paused;
+}
+
+/* ─── Reduced Motion ──────────────────────────────────────────────────────────
+   Kill spins, pulses and view transitions for users who ask the OS for less
+   motion. Views keep their explicit `opacity: 1` so nothing can be left
+   invisible when animations are disabled. */
+
+@media (prefers-reduced-motion: reduce) {
+  .vinyl-disc,
+  .mini-vinyl-spin,
+  .eq-bars span,
+  .pulse-accent {
+    animation: none !important;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -5,6 +5,12 @@
 
 const App = (() => {
   // ─── State ─────────────────────────────────────────────────────────────────
+  // Liked songs persist in localStorage (survives restarts); migrate to the
+  // Rust backend when a likes API exists.
+  let likedSongs;
+  try { likedSongs = new Set(JSON.parse(localStorage.getItem('musico-likes') || '[]')); }
+  catch (e) { likedSongs = new Set(); }
+
   const state = {
     currentView: 'now-playing',
     isPlaying: false,
@@ -15,6 +21,8 @@ const App = (() => {
     shuffleMode: 0, // 0=off, 1=shuffle, 2=smart
     repeatMode: 0,  // 0=off, 1=one, 2=all
     isLiked: false,
+    likedSongs,
+    likedOnly: false,
     library: [],
     queue: [],
     recommendations: [],    sortField: 'title',
@@ -24,6 +32,24 @@ const App = (() => {
     palette: 'nebula',
     settings: {},
   };
+
+  // ─── Generated Art ──────────────────────────────────────────────────────────
+  // Deterministic gradient per song (hash of id → curated palette pair) so the
+  // app has real visual identity even with zero embedded covers. Real covers
+  // (get_cover) override this on the vinyl + dock via loadCover().
+  const ART_PALETTES = [
+    ['#8b7ad6', '#4a3f8f'], ['#e0709e', '#8f2f56'], ['#4fbf95', '#1a6b4c'],
+    ['#54a8e0', '#1f5f8a'], ['#e0a04f', '#8f5a1f'], ['#9d8cff', '#c46b8a'],
+    ['#52c4b0', '#2a7a9e'], ['#b08968', '#5a3d6e'],
+  ];
+
+  function artFor(song) {
+    let h = 0;
+    const key = String(song?.id ?? 'x');
+    for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) | 0;
+    const [a, b] = ART_PALETTES[Math.abs(h) % ART_PALETTES.length];
+    return `linear-gradient(135deg, ${a}, ${b})`;
+  }
 
   // ─── Initialization ────────────────────────────────────────────────────────
   async function init() {
@@ -38,6 +64,8 @@ const App = (() => {
     setupSettingsPersistence();
     setupEq();
     setupScanButton();
+    setupLikedFilter();
+    setupQueueClear();
 
     // Load library
     state.library = await Bridge.invoke('get_library');
@@ -88,6 +116,7 @@ const App = (() => {
   function applySettings(s) {
     if (!s) return;
     document.documentElement.setAttribute('data-theme', s.theme === 'dark' ? 'dark' : 'light');
+    try { localStorage.setItem('musico-theme', s.theme === 'dark' ? 'dark' : 'light'); } catch (e) {}
     document.querySelectorAll('[data-theme-pill]').forEach((p) =>
       p.classList.toggle('active', p.dataset.themePill === (s.theme === 'dark' ? 'dark' : 'light')));
     if (s.palette) {
@@ -119,8 +148,8 @@ const App = (() => {
     }
     updateModeIndicator();
     // Normalization pills
-    document.querySelectorAll('#panel-audio .s-card:nth-of-type(2) .sort-pill').forEach((pill) => {
-      pill.classList.toggle('active', pill.textContent.trim() === s.normalization);
+    document.querySelectorAll('[data-normalization]').forEach((pill) => {
+      pill.classList.toggle('active', pill.dataset.normalization === s.normalization);
     });
     // EQ: restore preset curve
     const presetName = s.eq_preset && EQ_PRESETS[s.eq_preset] ? s.eq_preset : 'Flat';
@@ -164,6 +193,7 @@ const App = (() => {
         pill.classList.add('active');
         const theme = pill.dataset.themePill;
         document.documentElement.setAttribute('data-theme', theme);
+        try { localStorage.setItem('musico-theme', theme); } catch (e) {}
         persistSettings({ theme });
       });
     });
@@ -178,23 +208,22 @@ const App = (() => {
       }
     });
 
-    // Normalization pills (2nd s-card in audio panel)
-    document.querySelectorAll('#panel-audio .s-card:nth-of-type(2) .sort-pill').forEach((pill) => {
+    // Normalization pills (data-normalization keeps this independent of card order)
+    document.querySelectorAll('[data-normalization]').forEach((pill) => {
       pill.addEventListener('click', () => {
         pill.parentElement.querySelectorAll('.sort-pill').forEach((p) => p.classList.remove('active'));
         pill.classList.add('active');
-        persistSettings({ normalization: pill.textContent.trim() });
-        Bridge.invoke('set_normalization', { mode: pill.textContent.trim() });
+        persistSettings({ normalization: pill.dataset.normalization });
+        Bridge.invoke('set_normalization', { mode: pill.dataset.normalization });
       });
     });
 
-    // Crossfade duration slider
+    // Crossfade duration slider (toggling crossfade stays an explicit choice)
     const slider = document.querySelector('.s-slider');
     slider?.addEventListener('input', () => {
       const val = document.querySelector('.s-value');
       if (val) val.textContent = `${Number(slider.value).toFixed(1)}s`;
-      persistSettings({ crossfade_enabled: true, crossfade_duration: Number(slider.value) });
-      document.getElementById('toggle-crossfade')?.classList.add('on');
+      persistSettings({ crossfade_duration: Number(slider.value) });
     });
   }
 
@@ -215,7 +244,7 @@ const App = (() => {
         if (isNew) {
           state.duration = song.duration_secs;
           state.position = 0;
-          state.isLiked = false;
+          state.isLiked = likedSongs.has(song.id);
           setNowPlayingUi(song);
           loadCover(song);
           loadLyrics(song);
@@ -227,6 +256,8 @@ const App = (() => {
       }
       case 'PositionUpdate':
       case 'Seeked':
+        // Don't fight the user's thumb mid-drag; their position wins.
+        if (window.Seek && typeof Seek.isDragging === 'function' && Seek.isDragging()) break;
         state.position = ev.position_secs;
         updateProgress();
         updateLyricsHighlight(ev.position_secs);
@@ -320,9 +351,18 @@ const App = (() => {
     document.getElementById('mini-title').textContent = song.title;
     document.getElementById('mini-artist').textContent = song.artist;
 
+    // One art identity across vinyl label + dock (real covers override later)
+    const grad = artFor(song);
+    document.getElementById('vinyl-label')?.style.setProperty('--art-grad', grad);
+    const miniArt = document.getElementById('mini-art');
+    if (miniArt) miniArt.style.background = grad;
+
+    // Reflect persisted like state for this song
+    state.isLiked = likedSongs.has(song.id);
     const likeBtn = document.getElementById('btn-like');
-    likeBtn.classList.remove('liked');
-    likeBtn.querySelector('svg').setAttribute('fill', 'none');
+    likeBtn.classList.toggle('liked', state.isLiked);
+    likeBtn.setAttribute('aria-pressed', String(state.isLiked));
+    likeBtn.querySelector('svg').setAttribute('fill', state.isLiked ? 'currentColor' : 'none');
   }
 
   // ─── Queue Rendering ──────────────────────────────────────────────────────
@@ -330,7 +370,13 @@ const App = (() => {
     state.queue = songs || [];
     const container = document.getElementById('queue-list');
     if (!container) return;
-    document.getElementById('queue-count').textContent = `${state.queue.length} songs`;
+
+    const totalSecs = state.queue.reduce((acc, s) => acc + (s.duration_secs || 0), 0);
+    document.getElementById('queue-count').textContent = state.queue.length
+      ? `${state.queue.length} songs · ${Math.round(totalSecs / 60)} min`
+      : '0 songs';
+    const clearBtn = document.getElementById('btn-clear-queue');
+    if (clearBtn) clearBtn.hidden = state.queue.length === 0;
 
     if (state.queue.length === 0) {
       container.innerHTML = `
@@ -346,29 +392,50 @@ const App = (() => {
 
     container.innerHTML = '';
     state.queue.forEach((song, i) => {
+      const isPlaying = state.currentSong?.id === song.id;
       const row = document.createElement('div');
-      row.className = 'song-row';
+      row.className = `song-row${isPlaying ? ' playing' : ''}`;
+      row.setAttribute('role', 'button');
+      row.tabIndex = 0;
+      if (isPlaying) row.setAttribute('aria-current', 'true');
+      row.setAttribute('aria-label', `Play ${song.title} by ${song.artist}`);
       row.innerHTML = `
-        <div class="song-num">${i + 1}</div>
-        <div class="song-art">
+        <div class="song-num">${isPlaying
+          ? '<div class="eq-bars"><span></span><span></span><span></span></div>'
+          : i + 1}</div>
+        <div class="song-art" style="background:${artFor(song)}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
         </div>
         <div class="song-info">
           <div class="song-name">${song.title}</div>
           <div class="song-detail">${song.artist} · ${song.album}</div>
         </div>
-        <button class="song-queue-btn" title="Remove from queue">
+        <button class="song-queue-btn" title="Remove from queue" aria-label="Remove ${song.title} from queue">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
         </button>`;
 
-      row.addEventListener('click', (e) => {
+      const activate = (e) => {
         if (e.target.closest('.song-queue-btn')) {
           Bridge.invoke('remove_from_queue', { songId: song.id });
           return;
         }
         playSong(song);
+      };
+      row.addEventListener('click', activate);
+      row.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(e); }
       });
       container.appendChild(row);
+    });
+  }
+
+  function setupQueueClear() {
+    const btn = document.getElementById('btn-clear-queue');
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      if (!state.queue.length) return;
+      Bridge.invoke('clear_queue');
+      showToast('Queue cleared');
     });
   }
 
@@ -443,13 +510,11 @@ const App = (() => {
     const activeNav = document.querySelector(`.nav-item[data-view="${viewName}"]`);
     if (activeNav) activeNav.classList.add('active');
 
-    // Show/hide mini player
+    // Dock lives in the sidebar (≥860px) — show whenever a song exists.
+    // body.has-mini only matters in compact mode where the strip overlays content.
     const miniPlayer = document.getElementById('mini-player');
-    if (viewName === 'now-playing') {
-      miniPlayer.classList.add('hidden');
-    } else if (state.currentSong) {
-      miniPlayer.classList.remove('hidden');
-    }
+    miniPlayer.classList.toggle('hidden', !state.currentSong);
+    document.body.classList.toggle('has-mini', !!state.currentSong && window.innerWidth < 860);
 
     if (viewName === 'playlists') renderStats();
   }
@@ -486,25 +551,52 @@ const App = (() => {
       bar.classList.remove('has-query');
       filterLibrary();
     });
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        input.value = '';
+        state.searchQuery = '';
+        bar.classList.remove('has-query');
+        filterLibrary();
+        input.blur();
+      }
+    });
   }
 
   function filterLibrary() {
     const q = state.searchQuery.toLowerCase();
-    const filtered = q
-      ? state.library.filter(s =>
-          s.title.toLowerCase().includes(q) ||
-          s.artist.toLowerCase().includes(q) ||
-          s.album.toLowerCase().includes(q)
-        )
-      : state.library;
+    let filtered = state.library;
+    if (state.likedOnly) {
+      filtered = filtered.filter(s => likedSongs.has(s.id));
+    }
+    if (q) {
+      filtered = filtered.filter(s =>
+        s.title.toLowerCase().includes(q) ||
+        s.artist.toLowerCase().includes(q) ||
+        s.album.toLowerCase().includes(q)
+      );
+    }
 
     const sorted = sortSongs(filtered);
     renderSongList(sorted);
     renderAlbumGrid(sorted);
 
-    document.getElementById('lib-count').textContent = q
-      ? `${filtered.length} results`
+    const scope = state.likedOnly ? 'liked song' + (filtered.length === 1 ? '' : 's') : 'songs';
+    document.getElementById('lib-count').textContent = (q || state.likedOnly)
+      ? `${filtered.length} ${q ? 'results' : scope}`
       : `${state.library.length} songs`;
+  }
+
+  // ─── Liked filter pill ──────────────────────────────────────────────────────
+  function setupLikedFilter() {
+    const pill = document.getElementById('filter-liked');
+    if (!pill) return;
+    pill.addEventListener('click', () => {
+      state.likedOnly = !state.likedOnly;
+      pill.classList.toggle('active', state.likedOnly);
+      pill.setAttribute('aria-pressed', String(state.likedOnly));
+      filterLibrary();
+    });
   }
 
   // ─── Sort ──────────────────────────────────────────────────────────────────
@@ -578,20 +670,37 @@ const App = (() => {
     document.getElementById('mini-play').addEventListener('click', togglePlay);
     document.getElementById('btn-prev').addEventListener('click', () => Bridge.invoke('previous'));
     document.getElementById('btn-next').addEventListener('click', () => Bridge.invoke('next'));
+    document.getElementById('mini-prev')?.addEventListener('click', () => Bridge.invoke('previous'));
     document.getElementById('mini-next').addEventListener('click', () => Bridge.invoke('next'));
+    document.getElementById('mini-expand')?.addEventListener('click', () => navigateTo('now-playing'));
+
+    // Add the current song to the queue (the "+" under the title)
+    document.getElementById('btn-queue-current')?.addEventListener('click', () => {
+      if (!state.currentSong) return;
+      Bridge.invoke('add_to_queue', { song: state.currentSong });
+      showToast(`Added "${state.currentSong.title}" to queue`);
+    });
 
     document.getElementById('btn-shuffle').addEventListener('click', cycleShuffle);
     document.getElementById('btn-repeat').addEventListener('click', cycleRepeat);
 
     document.getElementById('btn-like').addEventListener('click', () => {
+      if (!state.currentSong) return;
       state.isLiked = !state.isLiked;
+      const songId = state.currentSong.id;
+      if (state.isLiked) {
+        likedSongs.add(songId);
+        showToast('Added to Liked');
+      } else {
+        likedSongs.delete(songId);
+        showToast('Removed from Liked');
+      }
+      try { localStorage.setItem('musico-likes', JSON.stringify([...likedSongs])); } catch (e) {}
       const btn = document.getElementById('btn-like');
       btn.classList.toggle('liked', state.isLiked);
-      if (state.isLiked) {
-        btn.querySelector('svg').setAttribute('fill', 'currentColor');
-      } else {
-        btn.querySelector('svg').setAttribute('fill', 'none');
-      }
+      btn.setAttribute('aria-pressed', String(state.isLiked));
+      btn.querySelector('svg').setAttribute('fill', state.isLiked ? 'currentColor' : 'none');
+      if (state.likedOnly) filterLibrary();
     });
 
     // Clicking the mini player (not its buttons) returns to Now Playing
@@ -602,7 +711,7 @@ const App = (() => {
 
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
-      if (e.target.tagName === 'INPUT') return;
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
       switch (e.key) {
         case ' ': e.preventDefault(); togglePlay(); break;
         case 'n': case 'N': Bridge.invoke('next'); break;
@@ -664,11 +773,10 @@ const App = (() => {
       miniPlay.querySelector('svg').innerHTML = '<polygon points="8,5 20,12 8,19"/>';
     }
 
-    // Mini player visibility
+    // Dock visibility (sidebar card ≥860px / overlay strip <860px)
     const miniPlayer = document.getElementById('mini-player');
-    if (state.currentSong && state.currentView !== 'now-playing') {
-      miniPlayer.classList.remove('hidden');
-    }
+    miniPlayer.classList.toggle('hidden', !state.currentSong);
+    document.body.classList.toggle('has-mini', !!state.currentSong && window.innerWidth < 860);
   }
 
   function cycleShuffle() {
@@ -692,6 +800,23 @@ const App = (() => {
     if (state.repeatMode === 1) modes.push('<span class="mode-active">Repeat One</span>');
     if (state.repeatMode === 2) modes.push('<span class="mode-active">Repeat All</span>');
     document.getElementById('mode-indicator').innerHTML = modes.join(' · ');
+
+    // Keep the buttons' labels truthful — the third shuffle mode (Smart Radio)
+    // is invisible otherwise.
+    const shuffleNames = ['Shuffle: Off', 'Shuffle: On', 'Shuffle: Smart Radio'];
+    const repeatNames = ['Repeat: Off', 'Repeat: One', 'Repeat: All'];
+    const shuffleBtn = document.getElementById('btn-shuffle');
+    const repeatBtn = document.getElementById('btn-repeat');
+    if (shuffleBtn) {
+      shuffleBtn.title = shuffleNames[state.shuffleMode];
+      shuffleBtn.setAttribute('aria-label', shuffleNames[state.shuffleMode]);
+      shuffleBtn.setAttribute('aria-pressed', String(state.shuffleMode > 0));
+    }
+    if (repeatBtn) {
+      repeatBtn.title = repeatNames[state.repeatMode];
+      repeatBtn.setAttribute('aria-label', repeatNames[state.repeatMode]);
+      repeatBtn.setAttribute('aria-pressed', String(state.repeatMode > 0));
+    }
   }
 
   // ─── Progress (driven entirely by engine PositionUpdate events) ───────────
@@ -702,18 +827,40 @@ const App = (() => {
     document.getElementById('seek-fill').style.width = `${pct}%`;
     document.getElementById('time-current').textContent = formatTime(state.position);
 
+    // Hide the thumb at position zero (it would overhang the track) + keep ARIA in sync
+    const seekContainer = document.querySelector('.seek-container');
+    if (seekContainer) seekContainer.classList.toggle('at-start', pct < 0.5);
+    const seekSlider = document.getElementById('seek-wrapper');
+    if (seekSlider) {
+      seekSlider.setAttribute('aria-valuemax', String(Math.round(state.duration)));
+      seekSlider.setAttribute('aria-valuenow', String(Math.round(state.position)));
+      seekSlider.setAttribute('aria-valuetext', formatTime(state.position));
+    }
+
     // Mini player progress
     document.getElementById('mini-player').style.setProperty('--mini-progress', `${pct}%`);
+
+    // Tonearm tracks the grooves outward → inward
+    Vinyl.setProgress(pct / 100);
 
     // Update waveform
     updateWaveformProgress(pct);
   }
 
   // ─── Toggles ───────────────────────────────────────────────────────────────
+  function toggleSwitch(el) {
+    el.classList.toggle('on');
+    el.setAttribute('aria-checked', String(el.classList.contains('on')));
+  }
+
   function setupToggles() {
     document.querySelectorAll('.s-toggle').forEach(toggle => {
-      toggle.addEventListener('click', () => {
-        toggle.classList.toggle('on');
+      toggle.addEventListener('click', () => toggleSwitch(toggle));
+      toggle.addEventListener('keydown', (e) => {
+        if (e.key === ' ' || e.key === 'Enter') {
+          e.preventDefault();
+          toggleSwitch(toggle);
+        }
       });
     });
   }
@@ -721,16 +868,28 @@ const App = (() => {
   // ─── Palette Swatches ──────────────────────────────────────────────────────
   function setupPaletteSwatches() {
     document.querySelectorAll('.swatch').forEach(swatch => {
-      swatch.addEventListener('click', () => {
-        const palette = swatch.dataset.palette;
-        state.palette = palette;
-        document.documentElement.setAttribute('data-palette', palette);
-
-        document.querySelectorAll('.swatch').forEach(s => s.classList.remove('selected'));
-        swatch.classList.add('selected');
-        persistSettings({ palette });
+      swatch.addEventListener('click', () => selectPalette(swatch));
+      swatch.addEventListener('keydown', (e) => {
+        if (e.key === ' ' || e.key === 'Enter') {
+          e.preventDefault();
+          selectPalette(swatch);
+        }
       });
     });
+  }
+
+  function selectPalette(swatch) {
+    const palette = swatch.dataset.palette;
+    state.palette = palette;
+    document.documentElement.setAttribute('data-palette', palette);
+
+    document.querySelectorAll('.swatch').forEach(s => {
+      s.classList.remove('selected');
+      s.setAttribute('aria-checked', 'false');
+    });
+    swatch.classList.add('selected');
+    swatch.setAttribute('aria-checked', 'true');
+    persistSettings({ palette });
   }
 
   // ─── Render Song List ──────────────────────────────────────────────────────
@@ -744,9 +903,16 @@ const App = (() => {
           <div class="empty-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
           </div>
-          <div class="empty-title">${state.searchQuery ? 'No results found' : 'Your library is empty'}</div>
-          <div class="empty-desc">${state.searchQuery ? `Nothing matching "${state.searchQuery}"` : 'Point Musico at your music collection in Settings'}</div>
+          <div class="empty-title">${state.searchQuery ? 'No results found' : state.likedOnly ? 'No liked songs yet' : 'Your library is empty'}</div>
+          <div class="empty-desc">${state.searchQuery
+            ? `Nothing matching "${state.searchQuery}"`
+            : state.likedOnly
+              ? 'Tap the heart on a song to keep it here'
+              : ''}</div>
+          ${!state.searchQuery && !state.likedOnly ? `
+            <button class="neu-btn neu-btn-pill" id="empty-pick-folder">Choose your music folder</button>` : ''}
         </div>`;
+      document.getElementById('empty-pick-folder')?.addEventListener('click', () => navigateTo('settings'));
       return;
     }
 
@@ -756,11 +922,15 @@ const App = (() => {
       row.className = `song-row${isPlaying ? ' playing' : ''}`;
       row.dataset.id = song.id;
       row.dataset.index = i + 1;
+      row.setAttribute('role', 'button');
+      row.tabIndex = 0;
+      if (isPlaying) row.setAttribute('aria-current', 'true');
+      row.setAttribute('aria-label', `Play ${song.title} by ${song.artist}`);
       row.innerHTML = `
         <div class="song-num">${isPlaying
           ? '<div class="eq-bars"><span></span><span></span><span></span></div>'
           : i + 1}</div>
-        <div class="song-art">
+        <div class="song-art" style="background:${artFor(song)}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
         </div>
         <div class="song-info">
@@ -768,16 +938,21 @@ const App = (() => {
           <div class="song-detail">${song.artist} · ${song.album}</div>
         </div>
         <div class="song-duration">${formatTime(song.duration_secs)}</div>
-        <button class="song-queue-btn" title="Add to queue">
+        <button class="song-queue-btn" title="Add to queue" aria-label="Add ${song.title} to queue">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
         </button>`;
 
-      row.addEventListener('click', (e) => {
+      const activate = (e) => {
         if (e.target.closest('.song-queue-btn')) {
           Bridge.invoke('add_to_queue', { song });
+          showToast(`Added "${song.title}" to queue`);
           return;
         }
         playSong(song);
+      };
+      row.addEventListener('click', activate);
+      row.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(e); }
       });
 
       container.appendChild(row);
@@ -791,14 +966,21 @@ const App = (() => {
     songs.forEach(song => {
       const card = document.createElement('div');
       card.className = 'album-card';
+      card.setAttribute('role', 'button');
+      card.tabIndex = 0;
+      card.setAttribute('aria-label', `Play ${song.title} by ${song.artist}`);
       card.innerHTML = `
-        <div class="album-card-art">
+        <div class="album-card-art" style="background:${artFor(song)}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
         </div>
         <div class="album-card-title">${song.title}</div>
         <div class="album-card-artist">${song.artist}</div>`;
 
-      card.addEventListener('click', () => playSong(song));
+      const activate = () => playSong(song);
+      card.addEventListener('click', activate);
+      card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); }
+      });
       container.appendChild(card);
     });
   }
@@ -807,11 +989,13 @@ const App = (() => {
     document.querySelectorAll('#song-list-view .song-row').forEach((row) => {
       const isPlaying = row.dataset.id === state.currentSong?.id;
       row.classList.toggle('playing', isPlaying);
+      if (isPlaying) row.setAttribute('aria-current', 'true');
+      else row.removeAttribute('aria-current');
 
       const num = row.querySelector('.song-num');
       if (isPlaying) {
         num.innerHTML = '<div class="eq-bars"><span></span><span></span><span></span></div>';
-        row.querySelector('.song-name').style.color = 'var(--accent)';
+        row.querySelector('.song-name').style.color = 'var(--accent-text)';
       } else {
         num.textContent = row.dataset.index;
         row.querySelector('.song-name').style.color = '';
@@ -824,22 +1008,25 @@ const App = (() => {
     const container = document.getElementById('recs-list');
     container.innerHTML = '';
 
-    state.recommendations.forEach((song, i) => {
-      const row = document.createElement('div');
-      row.className = 'song-row';
-      row.innerHTML = `
-        <div class="song-num">${i + 1}</div>
-        <div class="song-art">
+    state.recommendations.forEach((song) => {
+      const card = document.createElement('div');
+      card.className = 'rec-card';
+      card.setAttribute('role', 'button');
+      card.tabIndex = 0;
+      card.setAttribute('aria-label', `Play ${song.title} by ${song.artist}`);
+      card.innerHTML = `
+        <div class="rec-art" style="background:${artFor(song)}">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
         </div>
-        <div class="song-info">
-          <div class="song-name">${song.title}</div>
-          <div class="song-detail">${song.artist} · ${song.album}</div>
-        </div>
-        <div class="song-duration">${formatTime(song.duration_secs)}</div>`;
+        <div class="rec-name">${song.title}</div>
+        <div class="rec-artist">${song.artist}</div>`;
 
-      row.addEventListener('click', () => playSong(song));
-      container.appendChild(row);
+      const activate = () => playSong(song);
+      card.addEventListener('click', activate);
+      card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); }
+      });
+      container.appendChild(card);
     });
   }
 
@@ -881,16 +1068,24 @@ const App = (() => {
       const grid = document.getElementById('stats-grid');
       const empty = document.getElementById('stats-empty');
       const streak = document.getElementById('stats-streak');
+      const topList = document.getElementById('top-songs-list');
+      const topEmpty = document.getElementById('top-songs-empty');
       if (!grid) return;
       if (!s || s.total_plays === 0) {
         grid.style.display = 'none';
         empty.style.display = '';
         streak.textContent = '';
-        document.getElementById('top-songs-list').innerHTML = '';
+        if (topList) topList.innerHTML = '';
+        // Top Songs needs an explicit empty state too — a header-only card
+        // reads as broken, not empty.
+        if (topList) topList.style.display = 'none';
+        if (topEmpty) topEmpty.style.display = '';
         return;
       }
       grid.style.display = '';
       empty.style.display = 'none';
+      if (topList) topList.style.display = '';
+      if (topEmpty) topEmpty.style.display = 'none';
       const hours = (s.total_listened_secs / 3600).toFixed(1);
       const cells = [
         ['Plays', s.total_plays],
@@ -912,9 +1107,12 @@ const App = (() => {
       (s.top_songs || []).slice(0, 5).forEach((song, i) => {
         const row = document.createElement('div');
         row.className = 'song-row';
+        row.setAttribute('role', 'button');
+        row.tabIndex = 0;
+        row.setAttribute('aria-label', `Play ${song.title} by ${song.artist}`);
         row.innerHTML = `
           <div class="song-num">${i + 1}</div>
-          <div class="song-art">
+          <div class="song-art" style="background:${artFor(song)}">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
           </div>
           <div class="song-info">
@@ -922,7 +1120,11 @@ const App = (() => {
             <div class="song-detail">${song.artist} · ${song.plays} plays</div>
           </div>`;
         const libSong = state.library.find((l) => l.id === song.id);
-        if (libSong) row.addEventListener('click', () => playSong(libSong));
+        const activate = () => { if (libSong) playSong(libSong); };
+        row.addEventListener('click', activate);
+        row.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); }
+        });
         list.appendChild(row);
       });
     });
@@ -1030,20 +1232,23 @@ const App = (() => {
   };
 })();
 
-  // ─── Toasts (errors, engine warnings) ─────────────────────────────────────
+  // ─── Toasts (errors, engine warnings, action feedback) ────────────────────
   let toastTimer = null;
 
-  function showError(message) {
+  function showToast(message) {
     let toast = document.getElementById('musico-toast');
     if (!toast) {
       toast = document.createElement('div');
       toast.id = 'musico-toast';
+      toast.setAttribute('role', 'status');
+      toast.setAttribute('aria-live', 'polite');
       toast.style.cssText = [
-        'position:fixed', 'bottom:86px', 'left:50%', 'transform:translateX(-50%)',
+        'position:fixed', 'bottom:150px', 'left:50%', 'transform:translateX(-50%)',
         'max-width:80%', 'padding:10px 18px', 'border-radius:12px',
         'background:var(--surface-raised, #222)', 'color:var(--text-primary, #fff)',
         'box-shadow:0 8px 32px rgba(0,0,0,0.25)', 'font-size:var(--text-caption, 12px)',
-        'z-index:9999', 'opacity:0', 'transition:opacity 0.25s ease',
+        'border:1px solid var(--border-subtle, transparent)',
+        'z-index:var(--z-modal, 1000)', 'opacity:0', 'transition:opacity 0.25s ease',
         'pointer-events:none', 'text-align:center',
       ].join(';');
       document.body.appendChild(toast);
@@ -1051,7 +1256,11 @@ const App = (() => {
     toast.textContent = message;
     toast.style.opacity = '1';
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { toast.style.opacity = '0'; }, 4000);
+    toastTimer = setTimeout(() => { toast.style.opacity = '0'; }, 2600);
+  }
+
+  function showError(message) {
+    showToast(message);
   }
 
   // Boot

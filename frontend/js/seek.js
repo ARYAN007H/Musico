@@ -41,9 +41,9 @@ const Seek = (() => {
     isDragging = false;
     if (thumb) thumb.style.transform = '';
 
-    // Send seek command
+    // Send seek command (Tauri v2 expects camelCase arg keys)
     if (App.state.duration > 0) {
-      Bridge.invoke('seek', { position_secs: App.state.position });
+      Bridge.invoke('seek', { positionSecs: App.state.position });
     }
   }
 
@@ -64,6 +64,12 @@ const Seek = (() => {
 
     // Update mini player progress
     document.getElementById('mini-player').style.setProperty('--mini-progress', `${pct * 100}%`);
+
+    // Keep the slider ARIA contract in sync while scrubbing
+    if (wrapper) {
+      wrapper.setAttribute('aria-valuenow', String(Math.round(App.state.position)));
+      wrapper.setAttribute('aria-valuetext', App.formatTime(App.state.position));
+    }
   }
 
   // Arrow key seek (±5 seconds)
@@ -74,12 +80,16 @@ const Seek = (() => {
         const delta = e.key === 'ArrowRight' ? 5 : -5;
         App.state.position = Math.max(0, Math.min(App.state.duration, App.state.position + delta));
         App.updateProgress();
-        Bridge.invoke('seek', { position_secs: App.state.position });
+        Bridge.invoke('seek', { positionSecs: App.state.position });
       }
     }
   });
 
   document.addEventListener('DOMContentLoaded', init);
 
-  return {};
+  return {
+    // Playback events check this so PositionUpdate doesn't fight the thumb
+    // mid-drag. Function form — callers do typeof Seek.isDragging === 'function'.
+    isDragging: () => isDragging,
+  };
 })();

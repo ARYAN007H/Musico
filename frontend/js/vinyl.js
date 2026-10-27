@@ -8,6 +8,11 @@ const Vinyl = (() => {
   const tonearm = document.getElementById('tonearm');
   const miniVinyl = document.getElementById('mini-vinyl');
 
+  // Tonearm groove sweep (deg): resting parks off the record; while playing
+  // the arm tracks from the outer groove (8°) toward the label (26°).
+  const ARM_OUTER_DEG = 8;
+  const ARM_INNER_DEG = 26;
+
   function setPlaying(playing) {
     if (disc) {
       disc.classList.toggle('paused', !playing);
@@ -18,7 +23,15 @@ const Vinyl = (() => {
     if (tonearm) {
       tonearm.classList.toggle('resting', !playing);
       tonearm.classList.toggle('playing', playing);
+      // Hand control back to the CSS class when not playing.
+      if (!playing) tonearm.style.transform = '';
     }
+  }
+
+  function setProgress(pct) {
+    if (!tonearm || !tonearm.classList.contains('playing')) return;
+    const angle = ARM_OUTER_DEG + (ARM_INNER_DEG - ARM_OUTER_DEG) * Math.max(0, Math.min(1, pct));
+    tonearm.style.transform = `rotate(${angle}deg)`;
   }
 
   function setAlbumArt(url) {
@@ -56,5 +69,5 @@ const Vinyl = (() => {
     }
   }
 
-  return { setPlaying, setAlbumArt };
+  return { setPlaying, setProgress, setAlbumArt };
 })();

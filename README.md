@@ -20,8 +20,9 @@
 ## ✨ What is Musico?
 
 Musico plays your local library with instant response times, learns what you like through an
-**offline recommendation engine** (no cloud, no tracking), and wraps it all in a soft neumorphic
-interface with six color palettes.
+**offline recommendation engine** (no cloud, no tracking), and wraps it all in a **proper desktop
+shell** — sidebar navigation, a now-playing dock, a real list-based library — finished in a soft
+neumorphic style with light/dark themes and six color palettes.
 
 No accounts. No telemetry. Your music never leaves your machine.
 
@@ -34,6 +35,8 @@ No accounts. No telemetry. Your music never leaves your machine.
   and cooldown. Every skip teaches it.
 - **Incremental library scan** — tags, durations, and cover art extracted per-file and cached;
   restarting the app re-scans in **milliseconds** and only re-analyzes changed files.
+- **A library that behaves like one** — instant search, multi-key sort, list & grid views,
+  hover-quick "add to queue", and liked songs that persist behind a ♥ Liked filter.
 - **Synced lyrics** — drop a `.lrc` next to an audio file and Now Playing becomes karaoke.
 - **MPRIS integration** — media keys, `playerctl`, desktop widgets, and Bluetooth controls work
   out of the box (`org.mpris.MediaPlayer2.musico`).
@@ -42,7 +45,8 @@ No accounts. No telemetry. Your music never leaves your machine.
 - **Listening stats** — plays, hours, skip rate, streaks, and top songs/artists.
 - **Smart shuffle & repeat** — shuffle / Smart Radio / repeat-one / repeat-all with proper
   queue-first semantics.
-- **6 palettes** — Nebula · Sakura · Aurora · Ocean · Ember · Mono.
+- **Light & dark themes, 6 palettes** — Nebula · Sakura · Aurora · Ocean · Ember · Mono.
+  Keyboard-accessible throughout (visible focus, full ARIA labels, reduced-motion aware).
 
 ### Keyboard Shortcuts
 
@@ -112,9 +116,10 @@ cargo test --workspace           # unit + engine e2e (audio device needed for e2
 
 ```
 ┌────────────────────────────────────────────────────────────┐
-│ frontend/            neumorphic UI — vanilla JS/CSS        │
-│   js/app.js          views, state, event handling          │
-│   js/bridge.js       Tauri IPC + stateful mock for browser │
+│ frontend/            desktop shell — vanilla JS/CSS        │
+│   sidebar nav + now-playing dock, light/dark, 6        │
+│   palettes; js/app.js views & state;                   │
+│   js/bridge.js Tauri IPC + stateful browser mock       │
 ├────────────────────────────────────────────────────────────┤
 │ src-tauri/           Tauri 2 shell                         │
 │   event_bridge.rs    engine events → webview (50 ms poll)  │

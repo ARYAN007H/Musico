@@ -5,11 +5,18 @@
    ══════════════════════════════════════════════════════════════════════════════ */
 
 const Bridge = (() => {
-  // Tauri v2 global API shape: invoke lives under __TAURI__.core,
-  // event listeners under __TAURI__.event.
+  // Tauri v2 IPC resolution, most-direct first:
+  //   1. __TAURI_INTERNALS__.invoke — the raw IPC shim, always injected first
+  //   2. __TAURI__.core.invoke      — the withGlobalTauri API bundle
+  //   3. __TAURI__.invoke           — legacy/compat shape
+  // Event listeners live under __TAURI__.event (bundle) only.
   const T = typeof window.__TAURI__ !== 'undefined' ? window.__TAURI__ : null;
-  const tauriInvoke = T?.core?.invoke ?? T?.invoke ?? null;
-  const isTauri = !!tauriInvoke;
+  const tauriInvoke =
+    (typeof window.__TAURI_INTERNALS__ !== 'undefined' && window.__TAURI_INTERNALS__.invoke) ||
+    T?.core?.invoke ||
+    T?.invoke ||
+    null;
+  const isTauri = typeof tauriInvoke === 'function';
   const listeners = {};
   const mockQueue = [];
 
@@ -33,8 +40,9 @@ const Bridge = (() => {
   }
 
   function listen(event, callback) {
-    if (T?.event?.listen) {
-      return T.event.listen(event, callback);
+    const tauriListen = T?.event?.listen ?? T?.core?.listen ?? null;
+    if (typeof tauriListen === 'function') {
+      return tauriListen(event, callback);
     }
     (listeners[event] = listeners[event] || []).push(callback);
     // Returns an unsubscribe function (same contract as Tauri listen)
