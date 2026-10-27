@@ -29,10 +29,26 @@
 - No story/branding talk — the goal is a daily-driver app.
 
 ## RELEASE STATE
-**v0.3.0 committed (26d3c74, 2026-10-27). All 14 chunks done. Measured: 513ms cold start,
-~138MB RAM idle, ~1% idle CPU (release build). Tests: 20 across workspace, all green.
-Next-up candidates (not started): playback-mode profiling, catch_unwind guard on decoder
-thread, playlist CRUD editor, tauri-plugin-updater, release tag + GitHub publish.**
+**v0.3.0 RELEASED (tag → .github/workflows/release.yml, 2026-10-28): auto-builds on `v*` tags →
+tests → tauri build deb/rpm/AppImage + bare binary/tar.gz + SHA256SUMS.txt → GitHub Release.
+Measured: 513ms cold start, ~138MB RAM idle, ~1% idle CPU. Tests 20 across workspace, all green.**
+- Release hardening: MIT LICENSE added, `[profile.release]` strip+thin-LTO+cg1 in root Cargo.toml,
+  bundle metadata (category must be tauri enum "Music", NOT "Audio" — bundler rejects free-form).
+- Cross-platform port STARTED: MPRIS/D-Bus (zbus) gated behind `cfg(target_os = "linux")`
+  (main.rs mod+setup block, state.rs mpris_state field → Mutex<Option<()>> off-Linux,
+  event_bridge update_mpris + call site). zbus dep moved to target-specific table.
+- `.github/workflows/ci.yml`: 3-OS matrix — linux tests + windows/macos `cargo check --workspace`
+  on every push/PR. This is the port gate: keep it green.
+- Port probe results (2026-10-28): windows-msvc target `cargo check` PASSES from Linux host
+  (needs rustup toolchain's bin dir in PATH — Arch distro cargo at /usr/sbin/cargo ignores
+  rustup-installed std). macOS aarch64 check NOT possible from Linux (objc2 needs Apple clang);
+  the macos CI runner is authoritative. Frontend already WebView2/WKWebView-safe (webkit
+  scrollbar/slider prefixes everywhere).
+- Next-up port work: media keys off-Linux (Windows SMTC, macOS MediaRemote), runtime testing on
+  real Win/mac hardware, code signing (Apple $99/yr, Windows cert), then extend release.yml to a
+  3-OS matrix (keep win/mac prerelease=true until a human has run the package).
+- Other candidates (not started): playback-mode profiling, catch_unwind guard on decoder
+  thread, playlist CRUD editor, tauri-plugin-updater.
 
 ## CURRENT STATUS (2026-10-27, post C6)
 **DONE & VERIFIED:**
@@ -177,6 +193,9 @@ site/                       landing site (vanilla HTML/CSS + three.js vendored i
                             live at https://aryan007h.github.io/Musico/. QA: ?scroll=<px>
                             jumps instantly; loader/hero-rise are compositor-CSS driven so
                             they complete even under main-thread stall
+.github/workflows/          release.yml (v* tags → deb/rpm/AppImage/tar.gz + SHA256SUMS),
+                            ci.yml (linux tests + windows/macos cargo check),
+                            pages.yml (site → GitHub Pages)
 musico_app/src/             (PORT SOURCE, Iced) scanner.rs real metadata+cover extraction,
                             config.rs ~/.config/musico/settings.json persistence, covers.rs,
                             lyrics.rs LRC parser, mpris.rs, timer.rs, updater.rs, stats
