@@ -20,6 +20,7 @@ const QUEUE_EVENT: &str = "queue-changed";
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 /// Mirrors engine state into the MPRIS D-Bus properties (media keys, playerctl).
+#[cfg(target_os = "linux")]
 fn update_mpris(engine: &Arc<PlaybackEngine>, handle: &AppHandle) {
     use tauri::Manager;
     let state = handle.state::<AppState>();
@@ -251,6 +252,7 @@ pub fn spawn(engine: Arc<PlaybackEngine>, handle: AppHandle) {
                     // the follow-up Playing event arrives immediately after.
                     advance_from(&handle, Some(&ev));
                 }
+                #[cfg(target_os = "linux")]
                 update_mpris(&engine, &handle);
                 let _ = handle.emit(EVENT_NAME, to_payload(&ev));
             }

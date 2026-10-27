@@ -26,7 +26,11 @@ pub struct AppState {
     /// True while a library scan is running (prevents concurrent scans).
     pub scanning: Arc<AtomicBool>,
     /// Shared MPRIS metadata, filled by the event bridge once D-Bus is up.
+    /// Unit type off Linux — MPRIS is a D-Bus interface and doesn't exist there.
+    #[cfg(target_os = "linux")]
     pub mpris_state: Mutex<Option<crate::mpris::MprisState>>,
+    #[cfg(not(target_os = "linux"))]
+    pub mpris_state: Mutex<Option<()>>,
 }
 
 impl AppState {

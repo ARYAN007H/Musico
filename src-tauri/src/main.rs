@@ -10,6 +10,7 @@ mod commands;
 mod config;
 mod event_bridge;
 mod lyrics;
+#[cfg(target_os = "linux")]
 mod mpris;
 mod scanner;
 mod state;
@@ -66,7 +67,8 @@ fn main() {
                 }
             }
 
-            // MPRIS: system media keys, playerctl, desktop widgets
+            // MPRIS: system media keys, playerctl, desktop widgets (D-Bus — Linux only)
+            #[cfg(target_os = "linux")]
             {
                 let mpris_handle = handle.clone();
                 let app_state = app.state::<AppState>();
