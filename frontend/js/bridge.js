@@ -19,6 +19,7 @@ const Bridge = (() => {
   const isTauri = typeof tauriInvoke === 'function';
   const listeners = {};
   const mockQueue = [];
+  const mockLikes = new Set();
 
   function emit(event, payload) {
     (listeners[event] || []).forEach((cb) => cb({ event, payload }));
@@ -105,6 +106,13 @@ const Bridge = (() => {
         return Promise.resolve(null);
       case 'get_recommendations':
         return Promise.resolve(DEMO_SONGS.slice(3, 7));
+      case 'set_song_like': {
+        const { songId, liked } = args || {};
+        if (liked) mockLikes.add(songId); else mockLikes.delete(songId);
+        return Promise.resolve(true);
+      }
+      case 'get_liked_ids':
+        return Promise.resolve([...mockLikes]);
       case 'start_scan':
         emit('library-updated', DEMO_SONGS);
         return Promise.resolve(true);

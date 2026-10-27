@@ -150,6 +150,8 @@ fn main() {
             commands::set_music_folder,
             // Recommendations
             commands::get_recommendations,
+            commands::set_song_like,
+            commands::get_liked_ids,
             // Stats & playlists
             commands::get_stats,
             commands::get_playlists,

@@ -26,6 +26,11 @@ pub fn stable_song_id(path: &str) -> String {
 // Cosine similarity
 // ---------------------------------------------------------------------------
 
+/// Euclidean norm of a vector.
+pub fn norm(v: &[f32]) -> f32 {
+    v.iter().map(|x| x * x).sum::<f32>().sqrt()
+}
+
 /// Computes cosine similarity between two equal-length vectors.
 /// Returns `0.0` if either vector has zero magnitude.
 pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
@@ -211,54 +216,4 @@ pub(crate) fn get_song_by_id(store: &Store, song_id: &str) -> Result<Option<Song
         }
         None => Ok(None),
     }
-}
-
-// ---------------------------------------------------------------------------
-// Similarity search
-// ---------------------------------------------------------------------------
-
-/// A similarity result pairing a song with its cosine-similarity score.
-#[derive(Debug, Clone)]
-pub struct SimilarityResult {
-    pub record: SongRecord,
-    pub score: f32,
-}
-
-/// Finds the `top_n` most similar songs using the in-memory vector cache.
-///
-/// `cache` contains `(song_id, weighted_vec)` pairs built at startup and
-/// maintained incrementally.  Only the final top-N records are fetched from
-/// sled, so this does at most `top_n` disk reads regardless of library size.
-pub(crate) fn find_similar_cached(
-    store: &Store,
-    song_id: &str,
-    top_n: usize,
-    cache: &[(String, Vec<f32>)],
-) -> Result<Vec<SimilarityResult>, RecommenderError> {
-    // Find the target vector in the cache.
-    let target_vec = cache
-        .iter()
-        .find(|(id, _)| id == song_id)
-        .map(|(_, v)| v.clone())
-        .ok_or_else(|| RecommenderError::NotFound(format!("Song not in cache: {song_id}")))?;
-
-    // Score all candidates from cache (in-memory, microseconds).
-    let mut scored: Vec<(&str, f32)> = cache
-        .iter()
-        .filter(|(id, _)| id != song_id)
-        .map(|(id, v)| (id.as_str(), cosine_similarity(&target_vec, v)))
-        .collect();
-
-    scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    scored.truncate(top_n);
-
-    // Fetch only the top-N full records from sled.
-    let mut results = Vec::with_capacity(scored.len());
-    for (id, score) in scored {
-        if let Some(record) = get_song_by_id(store, id)? {
-            results.push(SimilarityResult { record, score });
-        }
-    }
-
-    Ok(results)
 }

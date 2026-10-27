@@ -5,11 +5,32 @@
 
 const App = (() => {
   // ─── State ─────────────────────────────────────────────────────────────────
-  // Liked songs persist in localStorage (survives restarts); migrate to the
-  // Rust backend when a likes API exists.
+  // Liked songs: the Rust backend is the source of truth (feeds the
+  // recommender); localStorage is a mirror for offline/preview mode.
   let likedSongs;
   try { likedSongs = new Set(JSON.parse(localStorage.getItem('musico-likes') || '[]')); }
   catch (e) { likedSongs = new Set(); }
+
+  // One-time merge of localStorage likes into the backend, then adopt the
+  // backend's set (covers likes made in other sessions).  In preview mode the
+  // bridge mocks make this a no-op round-trip.
+  async function syncLikesWithBackend() {
+    try {
+      const backendIds = await Bridge.invoke('get_liked_ids');
+      const backend = new Set(backendIds || []);
+      for (const id of likedSongs) {
+        if (!backend.has(id)) {
+          await Bridge.invoke('set_song_like', { songId: id, liked: true });
+        }
+      }
+      const merged = new Set(await Bridge.invoke('get_liked_ids'));
+      if (merged.size > 0 || backend.size > 0) {
+        likedSongs = merged;
+        state.likedSongs = merged;
+        try { localStorage.setItem('musico-likes', JSON.stringify([...merged])); } catch (e) {}
+      }
+    } catch (e) { /* no backend — keep localStorage as-is */ }
+  }
 
   const state = {
     currentView: 'now-playing',
@@ -72,6 +93,9 @@ const App = (() => {
     renderSongList(state.library);
     renderAlbumGrid(state.library);
     generateWaveform();
+
+    // Merge likes into the backend recommender before first rec request
+    await syncLikesWithBackend();
 
     // Load recommendations
     state.recommendations = await Bridge.invoke('get_recommendations');
@@ -695,6 +719,8 @@ const App = (() => {
         likedSongs.delete(songId);
         showToast('Removed from Liked');
       }
+      // Backend feed (profile/affinity/cooldown signals) + localStorage mirror.
+      Bridge.invoke('set_song_like', { songId, liked: state.isLiked });
       try { localStorage.setItem('musico-likes', JSON.stringify([...likedSongs])); } catch (e) {}
       const btn = document.getElementById('btn-like');
       btn.classList.toggle('liked', state.isLiked);

@@ -472,3 +472,39 @@ fn fallback_recs(state: &State<AppState>) -> Vec<SongMeta> {
     let step = lib.len() / 6;
     (0..6).map(|i| lib[i * step].clone()).collect()
 }
+
+// ─── Likes ───────────────────────────────────────────────────────────────────
+
+/// Sets (or clears) a song's like — the backend is the source of truth for ♥,
+/// feeding the recommender's profile, affinity and cooldown signals.
+#[tauri::command]
+pub fn set_song_like(state: State<AppState>, song_id: String, liked: bool) -> Result<(), String> {
+    let Some(rec) = state.recommender.as_ref() else {
+        return Err("Recommender unavailable".into());
+    };
+    let like_state = if liked {
+        musico_recommender::LikeState::Liked
+    } else {
+        musico_recommender::LikeState::Neutral
+    };
+    rec.lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .set_like(&song_id, like_state)
+        .map_err(|e| e.to_string())
+}
+
+/// All liked song ids — used by the frontend for one-time migration of its
+/// localStorage likes and for the Liked filter pill.
+#[tauri::command]
+pub fn get_liked_ids(state: State<AppState>) -> Vec<String> {
+    state
+        .recommender
+        .as_ref()
+        .map(|rec| {
+            rec.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .liked_ids()
+                .unwrap_or_default()
+        })
+        .unwrap_or_default()
+}

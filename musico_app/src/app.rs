@@ -421,7 +421,7 @@ impl Application for Musico {
                     }
                     PlaybackEvent::SongEnded { song_id, listened_secs, duration_secs } => {
                         if let Some(rec) = &self.0.recommender {
-                            let guard = rec.lock().unwrap();
+                            let mut guard = rec.lock().unwrap();
                             let _ = guard.log_listen(&song_id, listened_secs, duration_secs as u32);
                         }
                         

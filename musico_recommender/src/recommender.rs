@@ -1,260 +1,418 @@
-//! Final recommendation pipeline — combines vector similarity, session context,
-//! play-history affinity, cooldown decay, and a discovery bonus into a ranked
-//! list with weighted random sampling.
+//! Final recommendation pipeline — engine v2.
+//!
+//! Seven signals, adaptive weights, all scored from an in-memory library
+//! cache (zero sled reads per candidate for the similarity/session/profile
+//! math; O(1) cached reads for affinity/cooldown/artist/cluster/context):
+//!
+//! 1. **similarity**  — cosine to the playing track (or session centroid /
+//!    taste profile when nothing plays)
+//! 2. **profile**     — cosine to the long-term taste profile, scaled by how
+//!    much the profile has learned yet
+//! 3. **session**     — cosine to the skip-aware session mood centroid
+//! 4. **artist**      — per-artist affinity (artists inherit their songs' rep)
+//! 5. **cluster**     — pseudo-genre (online k-means) affinity
+//! 6. **context**     — time-of-day sound match (tempo/energy/brightness)
+//! 7. **discovery**   — smooth novelty decay, boosted when the user keeps
+//!    skipping (skip streak + adaptive exploration multiplier)
+//!
+//! Then: cooldown gate (softened for liked songs), same-artist fatigue,
+//! greedy MMR re-rank with a per-artist cap, and per-song dominant-signal
+//! attribution that feeds the online weight-learning loop.
 
-use rand::Rng;
+use chrono::Local;
 
+use crate::context;
+use crate::diversity::mmr_select;
 use crate::errors::RecommenderError;
 use crate::history;
-use crate::models::{RecommendationRequest, RecommendedSong, Store};
+use crate::likes;
+use crate::models::{LikeState, RecommendationRequest, RecommendedSong, SongCache, Store};
+use crate::profile;
 use crate::session;
 use crate::vector_store;
 
-/// Runs the full recommendation pipeline.
-///
-/// Uses the in-memory `vector_cache` for similarity search (zero sled I/O for
-/// the scan), and reads affinity/cooldown from the pre-computed `scores` tree
-/// (O(1) per candidate).
-///
-/// # Pipeline
-///
-/// 1. Guard: ≥ 3 songs (O(1) counter read).
-/// 2. Top 50 similar via in-memory cache.
-/// 3. Filter excluded IDs.
-/// 4. Score: similarity × 0.35 + session × 0.30 + affinity × 0.20 + discovery × 0.15.
-/// 5. Gate: suppress cooldown > 0.7.
-/// 6. Weighted random sample from top 10 by score².
+/// Candidates kept for the MMR stage — wide enough for the artist cap and
+/// diversity term to bite, small enough to keep the pass O(pool).
+const MMR_POOL: usize = 24;
+
+/// Above this library size, candidate generation samples instead of scoring
+/// everything (scoring is O(N × 30) which is still trivial at 5 000).
+const FULL_SCAN_LIMIT: usize = 5_000;
+
+/// Skips this streak long? Extra exploration multiplier per additional skip.
+const SKIP_STREAK_BOOST: f32 = 0.15;
+const SKIP_STREAK_BOOST_CAP: f32 = 1.6;
+
 pub(crate) fn recommend(
     store: &Store,
     req: &RecommendationRequest,
-    vector_cache: &[(String, Vec<f32>)],
+    cache: &SongCache,
 ) -> Result<Vec<RecommendedSong>, RecommenderError> {
-    // Step 1: O(1) song count guard.
-    let total = store.song_count().map_err(RecommenderError::DbError)?;
-    if total < 3 {
+    if store.song_count()? < 3 {
         return Err(RecommenderError::InsufficientLibrary);
     }
+    if cache.is_empty() {
+        return Ok(Vec::new());
+    }
 
-    // Step 2: Top 50 similar songs from in-memory cache.
-    let similar = vector_store::find_similar_cached(store, &req.current_song_id, 50, vector_cache)?;
+    // ---- Anchors & shared context ----
+    let anchor_vec = cache.vec_of(&req.current_song_id).cloned();
+    let anchor_artist = req.anchor_artist.clone();
+    let profile_vec = profile::effective(store)?;
+    let profile_strength = profile::confidence(store)?;
+    let bucket = context::bucket_for(Local::now());
 
-    // Step 3: Exclusion set.
-    let exclude_set: std::collections::HashSet<&str> =
-        req.exclude_ids.iter().map(|s| s.as_str()).collect();
+    // Session artist fatigue counts: how often each artist appeared in the
+    // recent session history.
+    let mut session_artist_counts: std::collections::HashMap<&str, u32> =
+        std::collections::HashMap::new();
+    for id in &req.session_state.song_history {
+        if let Some(rec) = cache.get(id) {
+            if !rec.artist.is_empty() {
+                *session_artist_counts.entry(rec.artist.as_str()).or_insert(0) += 1;
+            }
+        }
+    }
 
+    let mut exclude: std::collections::HashSet<&str> =
+        req.exclude_ids.iter().map(String::as_str).collect();
+    if !req.current_song_id.is_empty() {
+        exclude.insert(req.current_song_id.as_str());
+    }
+
+    // ---- Candidate generation ----
+    let candidate_idx = select_candidates(store, req, cache, &anchor_vec, &profile_vec)?;
+
+    // ---- Scoring ----
     let mut candidates: Vec<RecommendedSong> = Vec::new();
-
-    for sim in similar {
-        if exclude_set.contains(sim.record.id.as_str()) {
+    for i in candidate_idx {
+        let record = &cache.records[i];
+        let vec = &cache.vecs[i];
+        if exclude.contains(record.id.as_str()) {
             continue;
         }
+        let like_state = cache.likes.get(&record.id).copied().unwrap_or(LikeState::Neutral);
+        if like_state == LikeState::Disliked {
+            continue; // hard exclusion — the user said no
+        }
 
-        // Step 4: Multi-signal scoring (all O(1) reads from scores tree).
-        let similarity_score = sim.score;
-        let session_match = session::get_session_similarity(&req.session_state, &sim.record);
-        let raw_affinity = history::get_song_affinity(store, &sim.record.id)?;
-        let affinity = (raw_affinity + 5.0) / 10.0;
-        let cooldown = history::get_cooldown_score(store, &sim.record.id)?;
+        let similarity_score = anchor_vec
+            .as_ref()
+            .map(|a| vector_store::cosine_similarity(a, vec).clamp(0.0, 1.0))
+            .unwrap_or(0.5);
+        let profile_match = profile_vec
+            .as_ref()
+            .map(|p| vector_store::cosine_similarity(p, vec).clamp(0.0, 1.0))
+            .unwrap_or(0.5);
+        let session_match = session::get_session_similarity(&req.session_state, record);
+        let artist_match = crate::artists::affinity_match(store, &record.artist)?;
+        let cluster_match =
+            clusters_match(store, cache.clusters.get(&record.id).copied())?;
+        let context_match = context::match_score(store, bucket, record)?;
 
-        let play_count = history::play_count(store, &sim.record.id)?;
-        let discovery_bonus: f32 = if play_count == 0 { 1.0 } else { 0.0 };
+        let like_delta = likes::affinity_delta(like_state);
+        let raw_affinity = history::get_song_affinity(store, &record.id)? + like_delta;
+        let affinity = ((raw_affinity + 5.0) / 10.0).clamp(0.0, 1.0);
 
-        let final_score = (similarity_score * 0.35)
-            + (session_match * 0.30)
-            + (affinity * 0.20)
-            + (discovery_bonus * 0.15);
+        let play_count = history::play_count(store, &record.id)?;
+        let discovery = if play_count == 0 {
+            1.0
+        } else {
+            (1.0 - play_count as f32 / 6.0).max(0.0)
+        };
 
-        // Step 5: Cooldown gate.
+        let mut cooldown = history::get_cooldown_score(store, &record.id)?;
+        if like_state == LikeState::Liked {
+            cooldown *= likes::LIKED_COOLDOWN_SCALE;
+        }
         if cooldown > 0.7 {
             continue;
         }
 
+        // Same-artist fatigue: the anchor's artist gets tired fastest;
+        // any artist dominating the session history tires more slowly.
+        let fatigue = match session_artist_counts.get(record.artist.as_str()).copied() {
+            Some(n) if !record.artist.is_empty() && record.artist == anchor_artist && n >= 2 => 0.12,
+            Some(n) if n >= 3 => 0.08,
+            _ => 0.0,
+        };
+
+        let w = &req.weights;
+        let exploration = w.exploration
+            * if req.skip_streak >= 2 {
+                (1.0 + SKIP_STREAK_BOOST * (req.skip_streak - 1).min(4) as f32)
+                    .min(SKIP_STREAK_BOOST_CAP)
+            } else {
+                1.0
+            };
+
+        let contributions: [(&'static str, f32); 8] = [
+            ("similarity", w.similarity * similarity_score),
+            ("affinity", w.affinity * affinity),
+            ("profile", w.profile * profile_strength * profile_match),
+            ("session", w.session * session_match),
+            ("artist", w.artist * artist_match),
+            ("cluster", w.cluster * cluster_match),
+            ("context", w.context * context_match),
+            ("discovery", w.discovery * exploration * discovery),
+        ];
+        let final_score = contributions.iter().map(|(_, c)| c).sum::<f32>() - fatigue;
+        let dominant_signal = contributions
+            .iter()
+            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+            .map(|(name, _)| *name)
+            .unwrap_or("similarity");
+
         candidates.push(RecommendedSong {
-            record: sim.record,
+            record: record.clone(),
             final_score,
             similarity_score,
             session_match,
             affinity,
             cooldown,
+            profile_match,
+            artist_match,
+            cluster_match,
+            context_match,
+            dominant_signal,
         });
     }
 
-    // Sort by final_score descending.
+    // ---- Rank, diversify, return ----
     candidates.sort_by(|a, b| {
         b.final_score
             .partial_cmp(&a.final_score)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
-
-    // Step 6: Weighted random sampling from top 10.
-    let pool_size = candidates.len().min(10);
-    if pool_size == 0 {
-        return Ok(Vec::new());
-    }
-
-    let top_pool = &candidates[..pool_size];
-    Ok(weighted_sample(top_pool, req.top_n))
+    candidates.truncate(MMR_POOL);
+    Ok(mmr_select(&candidates, req.top_n))
 }
 
-/// Weighted random sampling without replacement.  Selection probability is
-/// proportional to `final_score²`.
-fn weighted_sample(pool: &[RecommendedSong], n: usize) -> Vec<RecommendedSong> {
-    let mut rng = rand::thread_rng();
-    let mut available: Vec<(usize, f32)> = pool
-        .iter()
-        .enumerate()
-        .map(|(i, s)| (i, s.final_score * s.final_score))
-        .collect();
-
-    let mut selected = Vec::with_capacity(n);
-
-    for _ in 0..n {
-        if available.is_empty() {
-            break;
-        }
-        let total_weight: f32 = available.iter().map(|(_, w)| w).sum();
-        if total_weight <= 0.0 {
-            if let Some(&(idx, _)) = available.first() {
-                selected.push(pool[idx].clone());
-                available.remove(0);
-            }
-            continue;
-        }
-
-        let threshold = rng.gen::<f32>() * total_weight;
-        let mut cumulative = 0.0_f32;
-        let mut pick = 0;
-        for (j, &(_, w)) in available.iter().enumerate() {
-            cumulative += w;
-            if cumulative >= threshold {
-                pick = j;
-                break;
-            }
-        }
-
-        let (idx, _) = available.remove(pick);
-        selected.push(pool[idx].clone());
+/// Chooses which songs enter the scoring pass.  Small libraries score in
+/// full (global optimum, and O(N×30) is microseconds); large ones sample a
+/// union of the most promising slices.
+fn select_candidates(
+    store: &Store,
+    req: &RecommendationRequest,
+    cache: &SongCache,
+    anchor_vec: &Option<Vec<f32>>,
+    profile_vec: &Option<Vec<f32>>,
+) -> Result<Vec<usize>, RecommenderError> {
+    if cache.len() <= FULL_SCAN_LIMIT {
+        return Ok((0..cache.len()).collect());
     }
 
-    selected
+    let mut picked: std::collections::BTreeSet<usize> = std::collections::BTreeSet::new();
+
+    let mut top_by = |target: &[f32], n: usize| {
+        let mut scored: Vec<(usize, f32)> = cache
+            .vecs
+            .iter()
+            .enumerate()
+            .map(|(i, v)| (i, vector_store::cosine_similarity(target, v)))
+            .collect();
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        picked.extend(scored.into_iter().take(n).map(|(i, _)| i));
+    };
+    if let Some(a) = anchor_vec {
+        top_by(a, 50);
+    }
+    if let Some(p) = profile_vec {
+        top_by(p, 40);
+    }
+
+    // Rotating discovery sample: changes daily, stable within a session, so
+    // large libraries still surface fresh material over time.
+    let day_seed = (chrono::Utc::now().timestamp() / 86_400) as u64;
+    let session_hash = {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        req.session_state.session_id.hash(&mut h);
+        h.finish()
+    };
+    let mut rng = rand::rngs::StdRng::seed_from_u64(day_seed ^ session_hash);
+    use rand::{seq::SliceRandom, SeedableRng};
+    let mut all: Vec<usize> = (0..cache.len()).collect();
+    all.shuffle(&mut rng);
+    picked.extend(all.into_iter().take(60));
+
+    // Silence the unused-store lint — kept for API symmetry with the small
+    // path and future affinity-ranked candidate slices.
+    let _ = store;
+    Ok(picked.into_iter().collect())
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+/// Cluster match, with the unknown-assignment case neutral.
+fn clusters_match(store: &Store, cluster: Option<u8>) -> Result<f32, RecommenderError> {
+    crate::clusters::affinity_match(store, cluster)
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::*;
-    use crate::vector_store::cosine_similarity;
+    use crate::models::{FeatureVector, SessionState};
+    use crate::SignalWeights;
     use chrono::Utc;
-    use uuid::Uuid;
 
-    #[test]
-    fn test_cosine_similarity_identical() {
-        let a = vec![1.0_f32, 0.0, 0.0];
-        let b = vec![1.0_f32, 0.0, 0.0];
-        let sim = cosine_similarity(&a, &b);
-        assert!((sim - 1.0).abs() < 1e-6, "Expected 1.0, got {sim}");
-    }
-
-    #[test]
-    fn test_cosine_similarity_orthogonal() {
-        let a = vec![1.0_f32, 0.0, 0.0];
-        let b = vec![0.0_f32, 1.0, 0.0];
-        let sim = cosine_similarity(&a, &b);
-        assert!(sim.abs() < 1e-6, "Expected 0.0, got {sim}");
-    }
-
-    #[test]
-    fn test_cooldown_zero_for_unplayed() {
-        let tmp = tempfile::tempdir().unwrap();
-        let store = Store::open(tmp.path().to_str().unwrap()).unwrap();
-        let score = history::get_cooldown_score(&store, "nonexistent-song-id").unwrap();
-        assert!(score.abs() < 1e-6, "Expected 0.0, got {score}");
-    }
-
-    #[test]
-    fn test_strong_skip_negative_affinity() {
-        let tmp = tempfile::tempdir().unwrap();
-        let store = Store::open(tmp.path().to_str().unwrap()).unwrap();
-
-        let song_id = "test-song-001";
-        let event = PlayEvent {
-            event_id: Uuid::new_v4().to_string(),
-            song_id: song_id.to_string(),
-            session_id: "sess-001".to_string(),
-            started_at: Utc::now(),
-            listened_secs: 3,
-            song_duration_secs: 240,
-            was_skipped: true,
-            listen_ratio: 3.0 / 240.0,
-        };
-
-        history::log_play_event(&store, &event).unwrap();
-        let affinity = history::get_song_affinity(&store, song_id).unwrap();
-        assert!(affinity < 0.0, "Expected negative affinity, got {affinity}");
-    }
-
-    #[test]
-    fn test_implicit_like_positive_affinity() {
-        let tmp = tempfile::tempdir().unwrap();
-        let store = Store::open(tmp.path().to_str().unwrap()).unwrap();
-
-        let song_id = "test-song-002";
-        let event = PlayEvent {
-            event_id: Uuid::new_v4().to_string(),
-            song_id: song_id.to_string(),
-            session_id: "sess-001".to_string(),
-            started_at: Utc::now(),
-            listened_secs: 200,
-            song_duration_secs: 240,
-            was_skipped: false,
-            listen_ratio: 200.0 / 240.0,
-        };
-
-        history::log_play_event(&store, &event).unwrap();
-        let affinity = history::get_song_affinity(&store, song_id).unwrap();
-        assert!(affinity > 0.0, "Expected positive affinity, got {affinity}");
-    }
-
-    #[test]
-    fn test_weighted_sample_count() {
-        let dummy_fv = FeatureVector {
+    fn fv(axis: usize, val: f32) -> FeatureVector {
+        let mut fv = FeatureVector {
             version: 1,
-            mfcc: [0.5; 13],
-            spectral_centroid: 0.5,
-            spectral_rolloff: 0.5,
-            zero_crossing_rate: 0.5,
-            rms_energy: 0.5,
-            tempo_bpm: 0.5,
-            chroma: [0.5; 12],
+            mfcc: [0.0; 13],
+            spectral_centroid: 0.0,
+            spectral_rolloff: 0.0,
+            zero_crossing_rate: 0.0,
+            rms_energy: 0.0,
+            tempo_bpm: 0.0,
+            chroma: [0.0; 12],
         };
-        let dummy_record = SongRecord {
-            id: "dummy".to_string(),
-            file_path: "/dev/null".to_string(),
-            title: "Test".to_string(),
-            artist: String::new(),
+        fv.mfcc[axis] = val;
+        fv
+    }
+
+    fn record(id: &str, artist: &str, axis: usize) -> crate::models::SongRecord {
+        crate::models::SongRecord {
+            id: id.into(),
+            file_path: format!("/{id}"),
+            title: id.into(),
+            artist: artist.into(),
             album: String::new(),
-            duration_secs: 180,
-            feature_vector: dummy_fv,
+            duration_secs: 100,
+            feature_vector: fv(axis, 1.0),
             indexed_at: Utc::now(),
             replay_gain_db: 0.0,
+        }
+    }
+
+    fn setup(ids: &[(&str, &str, usize)]) -> (Store, SongCache) {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Store::open(tmp.path().to_str().unwrap()).unwrap();
+        let mut cache = SongCache::default();
+        for (_i, (id, artist, axis)) in ids.iter().enumerate() {
+            let rec = record(id, artist, *axis);
+            let bytes = bincode::serialize(&rec).unwrap();
+            store.songs.insert(rec.id.as_bytes(), bytes).unwrap();
+            store.increment_song_count().unwrap();
+            cache.push(rec);
+        }
+        // Keep the tempdir alive until the test ends by leaking it (test-only).
+        std::mem::forget(tmp);
+        (store, cache)
+    }
+
+    fn request(current: &str, top_n: usize) -> RecommendationRequest {
+        RecommendationRequest {
+            current_song_id: current.into(),
+            session_state: SessionState {
+                session_id: "sess".into(),
+                started_at: Utc::now(),
+                song_history: vec![current.into()],
+                centroid: None,
+            },
+            top_n,
+            exclude_ids: vec![current.into()],
+            weights: SignalWeights::default(),
+            anchor_artist: String::new(),
+            skip_streak: 0,
+        }
+    }
+
+    #[test]
+    fn too_small_library_errors() {
+        let (store, cache) = setup(&[("a", "A", 0), ("b", "B", 1)]);
+        assert!(matches!(
+            recommend(&store, &request("a", 3), &cache),
+            Err(RecommenderError::InsufficientLibrary)
+        ));
+    }
+
+    #[test]
+    fn dislikes_are_hard_excluded() {
+        let (store, mut cache) = setup(&[
+            ("playing", "P", 0),
+            ("loved", "L", 0),      // most similar
+            ("other1", "O1", 1),
+            ("other2", "O2", 2),
+        ]);
+        likes::set(&store, "loved", LikeState::Disliked).unwrap();
+        cache.likes.insert("loved".into(), LikeState::Disliked);
+
+        let recs = recommend(&store, &request("playing", 3), &cache).unwrap();
+        assert!(!recs.iter().any(|r| r.record.id == "loved"));
+        assert!(!recs.is_empty());
+    }
+
+    #[test]
+    fn liked_song_rises_to_top() {
+        let (store, mut cache) = setup(&[
+            ("playing", "P", 0),
+            ("liked", "L", 0),   // same sound as the anchor, but explicitly liked
+            ("neutral", "N", 0), // equally similar, no like
+            ("filler", "F", 5),
+        ]);
+        likes::set(&store, "liked", LikeState::Liked).unwrap();
+        cache.likes.insert("liked".into(), LikeState::Liked);
+
+        let recs = recommend(&store, &request("playing", 2), &cache).unwrap();
+        assert_eq!(recs[0].record.id, "liked", "explicit like must beat raw similarity");
+    }
+
+    #[test]
+    fn works_without_anchor_or_profile() {
+        let (store, cache) = setup(&[
+            ("a", "A", 0),
+            ("b", "B", 1),
+            ("c", "C", 2),
+            ("d", "D", 3),
+        ]);
+        let mut req = request("", 3);
+        req.exclude_ids.clear();
+        let recs = recommend(&store, &req, &cache).unwrap();
+        assert!(!recs.is_empty(), "cold start must still return picks");
+    }
+
+    #[test]
+    fn attribution_is_present_on_every_rec() {
+        let (store, cache) = setup(&[
+            ("a", "A", 0),
+            ("b", "B", 1),
+            ("c", "C", 2),
+            ("d", "D", 3),
+        ]);
+        let recs = recommend(&store, &request("a", 2), &cache).unwrap();
+        assert!(recs.iter().all(|r| !r.dominant_signal.is_empty()));
+    }
+
+    #[test]
+    fn skip_streak_boosts_discovery_contribution() {
+        let (store, cache) = setup(&[
+            ("a", "A", 0),
+            ("b", "B", 1),
+            ("c", "C", 2),
+            ("d", "D", 3),
+            ("e", "E", 4),
+        ]);
+
+        let mut calm = request("a", 4);
+        calm.skip_streak = 0;
+        let mut frantic = request("a", 4);
+        frantic.skip_streak = 4;
+
+        // All four non-anchor candidates are never-played (discovery = 1.0),
+        // so the only scoring difference between the two runs is the
+        // skip-streak exploration multiplier on the discovery signal.
+        let calm_recs = recommend(&store, &calm, &cache).unwrap();
+        let frantic_recs = recommend(&store, &frantic, &cache).unwrap();
+        let score_of = |rs: &[RecommendedSong], id: &str| {
+            rs.iter()
+                .find(|r| r.record.id == id)
+                .map(|r| r.final_score)
+                .expect("candidate must be ranked in both runs")
         };
-
-        let pool: Vec<RecommendedSong> = (0..10)
-            .map(|i| RecommendedSong {
-                record: SongRecord { id: format!("song-{i}"), ..dummy_record.clone() },
-                final_score: 1.0 - (i as f32 * 0.05),
-                similarity_score: 0.9,
-                session_match: 0.8,
-                affinity: 0.5,
-                cooldown: 0.1,
-            })
-            .collect();
-
-        let result = weighted_sample(&pool, 5);
-        assert_eq!(result.len(), 5, "Expected 5 samples, got {}", result.len());
+        let c_calm = score_of(&calm_recs, "c");
+        let c_frantic = score_of(&frantic_recs, "c");
+        assert!(
+            c_frantic > c_calm,
+            "skip streak should lift discovery-driven scores: calm {c_calm} vs frantic {c_frantic}"
+        );
     }
 }

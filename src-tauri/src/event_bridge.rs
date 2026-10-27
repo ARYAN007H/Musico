@@ -116,12 +116,14 @@ fn advance_from(handle: &AppHandle, ended: Option<&PlaybackEvent>) -> bool {
     let state = handle.state::<AppState>();
     let Some(eng) = state.engine.as_ref().cloned() else { return false };
 
-    // Log the listen (skip detection included) so affinity learns.
+    // Log the listen (skip detection included) so every taste signal learns:
+    // song affinity, artist rep, cluster, time-of-day bucket, profile — and
+    // only non-skipped ends move the session mood centroid.
     if let Some(PlaybackEvent::SongEnded { song_id, listened_secs, duration_secs }) = ended {
         if let Some(rec) = &state.recommender {
             if let Ok(mut r) = rec.lock() {
-                if let Err(e) = r.log_listen(song_id, *listened_secs, *duration_secs as u32) {
-                    log::warn!("log_listen failed: {e}");
+                if let Err(e) = r.on_song_ended(song_id, *listened_secs, *duration_secs as u32) {
+                    log::warn!("on_song_ended failed: {e}");
                 }
             }
         }

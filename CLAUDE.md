@@ -151,7 +151,9 @@ one `publish` job downloads + SHA256SUMS + creates the release (race-free). Tags
 - Dead controls resolved: Sleep Timer card REMOVED (not core, was unwired); queue drag CSS
   removed; btn-queue-current (+ under title) now wires add_to_queue + toast; queue header
   has a working Clear button + "N songs · M min" count; like persists to localStorage
-  `musico-likes` + ♥ Liked filter pill in Library (migrate to a backend likes API later).
+  `musico-likes` + ♥ Liked filter pill in Library — NOW backend-backed via set_song_like/
+  get_liked_ids (init() merges localStorage → backend once, then backend wins; localStorage
+  stays as mirror for preview mode).
 - Rotary volume knob REMOVED (user call: felt weird; do NOT scale the vinyl to fit it).
   Volume = slider in mini player strip (#mini-volume) + ↑/↓ keys; knob.js is its
   controller, same Knob.setVolume API.
@@ -162,6 +164,19 @@ one `publish` job downloads + SHA256SUMS + creates the release (race-free). Tags
   empty state; "Playlists" page retitled "Playlists & Insights"; Smart Radio toggle moved
   to General; crossfade slider no longer force-enables crossfade; normalization pills
   keyed by data-normalization.
+
+**RECOMMENDER V2 (2026-10-28):**
+- Engine rewritten: 8 adaptive signals (similarity/affinity/profile/session/artist/cluster/
+  context/discovery — details in BACKEND API CHEATSHEET), online weight learning from rec
+  outcomes, skip-aware session centroid, MMR + per-artist-cap diversity, smooth discovery decay,
+  like/dislike integration. 43 crate tests green; `cargo check --workspace` green.
+- Likes are now backend-backed: commands `set_song_like(song_id, liked)` + `get_liked_ids`
+  registered in main.rs; app.js syncs localStorage → backend at init and pushes every ♥ toggle
+  (backend feeds profile/affinity/cooldown). Cache-bust bumped to ?v=0.3.6.
+- event_bridge SongEnded now calls `on_song_ended` (was log_listen) — one call drives all
+  learning paths. `log_listen` still exists for manual use.
+- Zero-migration design: existing DBs gain 4 new sled trees on open; frozen bincode structs
+  untouched; cluster backfill for pre-v2 songs runs once at startup (289 songs ≈ instant).
 
 **KNOWN LIMITATIONS / NEXT:**
 - Engine-thread panic = silent death (no catch_unwind in musico_playback decoder loop) —
@@ -218,7 +233,10 @@ musico_app/src/             (PORT SOURCE, Iced) scanner.rs real metadata+cover e
 musico_playback/src/        lib.rs PlaybackEngine; decoder.rs symphonia; resampler.rs rubato;
                             output.rs cpal+ringbuf+flush; queue.rs PlaybackQueue; events.rs; state.rs
 musico_recommender/src/     lib.rs MusicRecommender; models.rs; analysis.rs RustFFT MFCC/chroma;
-                            recommender.rs cosine+session EMA+affinity+cooldown
+                            recommender.rs 8-signal adaptive pipeline; profile.rs taste profile;
+                            clusters.rs online k-means pseudo-genres; context.rs daypart buckets;
+                            artists.rs per-artist affinity; likes.rs explicit feedback;
+                            adapt.rs online weight learning; diversity.rs MMR re-rank
 ```
 
 ## BACKEND API CHEATSHEET
@@ -242,14 +260,32 @@ listened_secs, duration_secs}`, `BufferingStarted/Complete`, `Error{...}` (check
 **MusicRecommender** (`musico_recommender`): `new(db_path:&str)` (sled at
 ~/.local/share/musico/db/), `index_song(file_path)`, `index_songs_batch(paths, cb?)`,
 `get_recommendations(RecommendationRequest) -> Vec<RecommendedSong>`, `log_listen(...)`,
-`on_song_changed(id)`, `get_all_songs() -> Vec<SongRecord>`, `get_stats() -> ListeningStats`,
+`on_song_changed(id)` (history only), `on_song_ended(id, listened, duration)` (logs listen +
+centroid + skip-streak + weight learning — event_bridge calls THIS), `set_like(id, LikeState)`,
+`get_like(id)`, `liked_ids()`, `get_all_songs() -> Vec<SongRecord>`, `get_stats() -> ListeningStats`,
 `get_playlists/save_playlist/delete_playlist`. NOT thread-safe wrapper — use `Arc<Mutex<>>`.
+
+**Recommender v2 (2026-10-28):** 8 signals with learned weights — similarity (cosine to playing
+track), affinity (song score cache + like bonus), profile (time-decayed listen EMA + like/dislike
+mean vectors, confidence-scaled), session (EMA centroid updated ONLY on non-skip song ends,
+α=0.08+0.32·ratio), artist (per-artist aggregates), cluster (online k-means k=8 over features,
+auto-migrates pre-v2 DB on startup), context (12 daypart×weekend buckets with tempo/energy/
+brightness means), discovery (1−plays/6 decay). Weights persist under `adapt:weights`; each rec
+batch stores dominant-signal attribution (`SessionExt` under sessions-tree `ext` key) and
+on_song_ended nudges that signal ±0.04 (clamp 0.02–0.55, renormalize) + exploration multiplier
+(0.6–2.0) from skip/completion outcomes. Final list: MMR (λ=0.75) + max 2 per artist; disliked =
+hard exclude; liked = cooldown×0.25 + affinity+3. In-memory `SongCache` (records+vecs+index,
+~0.5KB/song) → zero sled reads per candidate; full scan ≤5k songs, else similarity/profile-top +
+daily-rotating sample. **Frozen bincode layouts:** SongRecord/SessionState/PlayEvent must NOT
+gain fields (bincode has no serde defaults — old DBs would fail to deserialize and be wiped);
+all v2 state lives in new trees (`likes`, `artists`, `context`, `clusters`) + default-tree keys.
 
 **Data shapes:**
 - `SongRecord{id, file_path, title, artist, album, duration_secs:u32, feature_vector:FeatureVector,
   indexed_at, replay_gain_db}` — FeatureVector = mfcc[13]+chroma[12]+5 scalars (centroid, rolloff,
   zcr, rms, tempo)
-- `RecommendedSong{record, final_score, similarity_score, session_match, affinity, cooldown}`
+- `RecommendedSong{record, final_score, similarity_score, session_match, affinity, cooldown,
+  profile_match, artist_match, cluster_match, context_match, dominant_signal}`
 - `SongInfo{id, file_path, title, artist, album, duration_secs:f32, cover_art:Option<Vec<u8>>}`
 - `SongMeta` (Tauri DTO) = SongInfo minus cover_art; convert via `From<SongMeta> for SongInfo`
 
